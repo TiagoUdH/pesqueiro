@@ -2,6 +2,7 @@ import pygame
 import sys
 import os
 import configparser
+import random
 
 # ── Diretorios ──────────────────────────────────────────────────────────────
 BASE_DIR    = os.path.dirname(os.path.abspath(__file__))
@@ -48,6 +49,12 @@ ANZOL_IDLE     = "idle"      # nao lancado, invisivel
 ANZOL_DESCENDO = "descendo"  # descendo na agua
 ANZOL_NA_AGUA  = "na_agua"   # parado aguardando
 ANZOL_SUBINDO  = "subindo"   # voltando para cima
+
+# ── Estados do peixe ────────────────────────────────────────────────────────
+PEIXE_NADANDO  = "nadando"   # nadando livremente
+PEIXE_ATRAIDO  = "atraido"   # indo em direcao ao anzol
+PEIXE_MORDENDO = "mordendo"  # tocando o anzol, esperando o pull
+PEIXE_FUGINDO  = "fugindo"   # escapou, afasta do anzol
 
 # Ponta da vara do pescador (origem da linha)
 # Calculado com base na posicao do pescador (DOCK_X+110, DOCK_Y+68) e escala 110x165
@@ -196,6 +203,135 @@ class Linha:
 
 
 # ════════════════════════════════════════════════════════════════════════════
+class Peixe(pygame.sprite.Sprite):
+    """Peixe que nada na area subaquatica e pode ser atraido pelo anzol."""
+
+    RAIO_ATRACAO  = 90   # distancia para começar a ir ao anzol
+    RAIO_MORDIDA  = 22   # distancia para considerar mordida
+    TEMPO_FUGA    = 120  # frames que o peixe fica fugindo antes de sumir
+
+    def __init__(self, dados):
+        super().__init__()
+        self.nome      = dados["nome"]
+        self.valor     = dados["valor"]
+        self.vel_base  = dados["velocidade"]
+        self.prof_min  = dados["profundidade_min"]
+        self.prof_max  = dados["profundidade_max"]
+
+        # Escala proporcional ao valor do peixe
+        escala = (70 + self.valor // 3, 38 + self.valor // 5)
+        img = load_image("peixes", dados["imagem"], escala)
+        img.set_colorkey(BRANCO)
+        self._img_dir  = img                              # nadando para direita
+        self._img_esq  = pygame.transform.flip(img, True, False)  # para esquerda
+
+        self.estado    = PEIXE_NADANDO
+        self.dir       = random.choice([-1, 1])           # -1 esq, +1 dir
+        self.vel       = self.vel_base * self.dir
+        self._fuga_timer = 0
+
+        self.image = self._img_dir if self.dir > 0 else self._img_esq
+        self.rect  = self.image.get_rect()
+
+        # Posicao inicial: fora da tela pelo lado oposto a direcao
+        y = LINHA_AGUA + random.randint(self.prof_min, self.prof_max)
+        y = min(y, ALTURA - 30)
+        if self.dir > 0:   # vem da esquerda
+            self.rect.midright = (0, y)
+        else:              # vem da direita
+            self.rect.midleft  = (LARGURA, y)
+
+    # ── Update ───────────────────────────────────────────────────────────────
+    def update(self, anzol):
+        if self.estado == PEIXE_NADANDO:
+            self.rect.x += self.vel
+            self._checar_atracoes(anzol)
+            self._checar_bordas()
+
+        elif self.estado == PEIXE_ATRAIDO:
+            # Move em direcao ao anzol
+            if anzol.visivel and anzol.estado == ANZOL_NA_AGUA:
+                dx = anzol.rect.centerx - self.rect.centerx
+                dy = anzol.rect.centery - self.rect.centery
+                dist = max(1, (dx**2 + dy**2) ** 0.5)
+                self.rect.x += int(self.vel_base * 1.5 * dx / dist)
+                self.rect.y += int(self.vel_base * 0.8 * dy / dist)
+                self._atualizar_flip(dx)
+                # Chegou na mordida?
+                if dist <= self.RAIO_MORDIDA:
+                    self.estado = PEIXE_MORDENDO
+                    self.rect.center = anzol.rect.center
+            else:
+                # Anzol foi retirado, volta a nadar
+                self.estado = PEIXE_NADANDO
+
+        elif self.estado == PEIXE_MORDENDO:
+            # Fica parado no anzol
+            if anzol.visivel:
+                self.rect.center = anzol.rect.center
+            else:
+                self.estado = PEIXE_FUGINDO
+
+        elif self.estado == PEIXE_FUGINDO:
+            self.rect.x += self.vel_base * 2 * self.dir
+            self._fuga_timer += 1
+            if self._fuga_timer >= self.TEMPO_FUGA or self._saiu_da_tela():
+                self.kill()
+
+    def _checar_atracoes(self, anzol):
+        if not anzol.visivel or anzol.estado != ANZOL_NA_AGUA:
+            return
+        dx = anzol.rect.centerx - self.rect.centerx
+        dy = anzol.rect.centery - self.rect.centery
+        dist = (dx**2 + dy**2) ** 0.5
+        if dist <= self.RAIO_ATRACAO:
+            self.estado = PEIXE_ATRAIDO
+
+    def _checar_bordas(self):
+        if self.rect.left > LARGURA + 10 or self.rect.right < -10:
+            self.kill()
+
+    def _atualizar_flip(self, dx):
+        nova_dir = 1 if dx > 0 else -1
+        if nova_dir != self.dir:
+            self.dir = nova_dir
+            self.vel = self.vel_base * self.dir
+            self.image = self._img_dir if self.dir > 0 else self._img_esq
+
+    def _saiu_da_tela(self):
+        return self.rect.left > LARGURA + 50 or self.rect.right < -50
+
+    @property
+    def esta_mordendo(self):
+        return self.estado == PEIXE_MORDENDO
+
+
+# ════════════════════════════════════════════════════════════════════════════
+def carregar_tipos_peixe():
+    """Le config.ini e retorna lista de dicts com dados de cada tipo de peixe."""
+    tipos = []
+    num = config.getint("peixes", "num", fallback=0)
+    for i in range(num):
+        sec = f"peixe{i}"
+        tipos.append({
+            "nome":            config.get(sec, "nome"),
+            "valor":           config.getint(sec, "valor"),
+            "velocidade":      config.getint(sec, "velocidade"),
+            "raridade":        config.getint(sec, "raridade"),
+            "profundidade_min": config.getint(sec, "profundidade_min"),
+            "profundidade_max": config.getint(sec, "profundidade_max"),
+            "imagem":          config.get(sec, "imagem"),
+        })
+    return tipos
+
+
+def escolher_tipo_peixe(tipos):
+    """Escolhe um tipo aleatorio ponderado pela raridade."""
+    pesos = [t["raridade"] for t in tipos]
+    return random.choices(tipos, weights=pesos, k=1)[0]
+
+
+# ════════════════════════════════════════════════════════════════════════════
 class Jogo:
     def __init__(self):
         pygame.init()
@@ -216,6 +352,12 @@ class Jogo:
         vel_linha = config.getint("jogador", "velocidade_linha", fallback=3)
         self.anzol = Anzol(vel=vel_linha)
         self.linha = Linha()
+
+        # Peixes
+        self.tipos_peixe  = carregar_tipos_peixe()
+        self.grupo_peixes = pygame.sprite.Group()
+        self._spawn_timer = 0
+        self._spawn_intervalo = 120  # frames entre spawns (~2s a 60fps)
 
     # ── Loop principal ───────────────────────────────────────────────────────
     def run(self):
@@ -293,6 +435,18 @@ class Jogo:
         elif self.anzol.estado == ANZOL_DESCENDO:
             self.pescador.set_estado(PESC_LANCANDO)
 
+        # Spawn de peixes
+        self._spawn_timer += 1
+        if self._spawn_timer >= self._spawn_intervalo:
+            self._spawn_timer = 0
+            if len(self.grupo_peixes) < 5:  # maximo de 5 peixes ao mesmo tempo
+                tipo = escolher_tipo_peixe(self.tipos_peixe)
+                self.grupo_peixes.add(Peixe(tipo))
+
+        # Atualiza todos os peixes
+        for peixe in self.grupo_peixes:
+            peixe.update(self.anzol)
+
     def _jogo_draw(self):
         # Cenario: fundo + agua + dock
         self.cenario.draw(self.tela)
@@ -303,6 +457,7 @@ class Jogo:
 
         # Pescador e anzol
         self.pescador.draw(self.tela)
+        self.grupo_peixes.draw(self.tela)
         self.anzol.draw(self.tela)
 
         # Instrucoes temporarias (remover quando HUD estiver pronto)
