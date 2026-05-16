@@ -332,6 +332,32 @@ def escolher_tipo_peixe(tipos):
 
 
 # ════════════════════════════════════════════════════════════════════════════
+class TextoFlutuante(pygame.sprite.Sprite):
+    """Texto que sobe e desaparece na tela (ex: '+10 moedas')."""
+
+    VEL_SUBIDA = 1.2
+    DURACAO    = 80   # frames ate sumir
+
+    def __init__(self, texto, pos, cor=(255, 215, 0)):
+        super().__init__()
+        fonte = pygame.font.SysFont("Arial", 22, bold=True)
+        self.image   = fonte.render(texto, True, cor)
+        self.rect    = self.image.get_rect(center=pos)
+        self._timer  = 0
+        self._y      = float(self.rect.y)
+
+    def update(self):
+        self._timer += 1
+        self._y     -= self.VEL_SUBIDA
+        self.rect.y  = int(self._y)
+        # Fade out na segunda metade
+        alpha = max(0, 255 - int(255 * self._timer / self.DURACAO))
+        self.image.set_alpha(alpha)
+        if self._timer >= self.DURACAO:
+            self.kill()
+
+
+# ════════════════════════════════════════════════════════════════════════════
 class Jogo:
     def __init__(self):
         pygame.init()
@@ -354,10 +380,20 @@ class Jogo:
         self.linha = Linha()
 
         # Peixes
-        self.tipos_peixe  = carregar_tipos_peixe()
-        self.grupo_peixes = pygame.sprite.Group()
-        self._spawn_timer = 0
-        self._spawn_intervalo = 120  # frames entre spawns (~2s a 60fps)
+        self.tipos_peixe     = carregar_tipos_peixe()
+        self.grupo_peixes    = pygame.sprite.Group()
+        self._spawn_timer    = 0
+        self._spawn_intervalo = 120
+
+        # Pontuacao
+        self.moedas            = config.getint("jogador", "moedas_iniciais", fallback=0)
+        self.peixes_capturados = 0
+        self.meta_moedas       = config.getint("jogo", "meta_moedas", fallback=1000)
+
+        # Textos flutuantes e exclamacao
+        self.grupo_textos  = pygame.sprite.Group()
+        self._fonte_excl   = pygame.font.SysFont("Arial", 36, bold=True)
+        self._fonte_hud    = pygame.font.SysFont("Arial", 20, bold=True)
 
     # ── Loop principal ───────────────────────────────────────────────────────
     def run(self):
@@ -423,6 +459,14 @@ class Jogo:
                         self.anzol.lancar()
                         self.pescador.set_estado(PESC_LANCANDO)
                     elif self.anzol.estado == ANZOL_NA_AGUA:
+                        # Verifica se algum peixe esta mordendo
+                        capturado = None
+                        for p in self.grupo_peixes:
+                            if p.esta_mordendo:
+                                capturado = p
+                                break
+                        if capturado:
+                            self._capturar_peixe(capturado)
                         self.anzol.puxar()
                         self.pescador.set_estado(PESC_PUXANDO)
 
@@ -447,6 +491,21 @@ class Jogo:
         for peixe in self.grupo_peixes:
             peixe.update(self.anzol)
 
+        # Atualiza textos flutuantes
+        self.grupo_textos.update()
+
+        # Verifica meta
+        if self.moedas >= self.meta_moedas:
+            self.estado = ESTADO_FIM
+
+    def _capturar_peixe(self, peixe):
+        """Registra captura, adiciona moedas e cria texto flutuante."""
+        self.moedas            += peixe.valor
+        self.peixes_capturados += 1
+        pos = (peixe.rect.centerx, peixe.rect.top - 10)
+        self.grupo_textos.add(TextoFlutuante(f"+{peixe.valor} moedas", pos))
+        peixe.kill()
+
     def _jogo_draw(self):
         # Cenario: fundo + agua + dock
         self.cenario.draw(self.tela)
@@ -460,15 +519,30 @@ class Jogo:
         self.grupo_peixes.draw(self.tela)
         self.anzol.draw(self.tela)
 
-        # Instrucoes temporarias (remover quando HUD estiver pronto)
-        estado_txt = {
-            ANZOL_IDLE:     "ESPACO = lancar",
-            ANZOL_DESCENDO: "linha descendo...",
-            ANZOL_NA_AGUA:  "ESPACO = puxar!",
-            ANZOL_SUBINDO:  "puxando...",
-        }.get(self.anzol.estado, "")
-        txt = self.fonte_pequena.render(f"{estado_txt}  |  S = Loja  |  ESC = Menu", True, PRETO)
-        self.tela.blit(txt, (10, 10))
+        # Textos flutuantes
+        self.grupo_textos.draw(self.tela)
+
+        # Exclamacao quando peixe morde
+        if any(p.esta_mordendo for p in self.grupo_peixes):
+            excl = self._fonte_excl.render("!", True, (255, 50, 50))
+            self.tela.blit(excl, (DOCK_X + 95, DOCK_Y - 115))
+
+        # HUD temporario (canto superior esquerdo)
+        hud_moedas = self._fonte_hud.render(f"Moedas: {self.moedas} / {self.meta_moedas}", True, PRETO)
+        hud_peixes = self._fonte_hud.render(f"Peixes: {self.peixes_capturados}", True, PRETO)
+        self.tela.blit(hud_moedas, (10, 10))
+        self.tela.blit(hud_peixes, (10, 32))
+
+        # Instrucao de controle
+        if any(p.esta_mordendo for p in self.grupo_peixes):
+            dica = "ESPACO = capturar!"
+            cor_dica = (200, 0, 0)
+        else:
+            dica = {ANZOL_IDLE: "ESPACO = lancar", ANZOL_DESCENDO: "descendo...",
+                    ANZOL_NA_AGUA: "ESPACO = puxar", ANZOL_SUBINDO: "puxando..."}.get(self.anzol.estado, "")
+            cor_dica = PRETO
+        txt = self._fonte_hud.render(f"{dica}  |  S = Loja  |  ESC = Menu", True, cor_dica)
+        self.tela.blit(txt, (10, ALTURA - 30))
 
     # ── LOJA ─────────────────────────────────────────────────────────────────
     def _loja_eventos(self):
