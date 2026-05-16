@@ -43,6 +43,17 @@ PESC_IDLE     = "idle"
 PESC_LANCANDO = "lancando"
 PESC_PUXANDO  = "puxando"
 
+# ── Estados do anzol ────────────────────────────────────────────────────────
+ANZOL_IDLE     = "idle"      # nao lancado, invisivel
+ANZOL_DESCENDO = "descendo"  # descendo na agua
+ANZOL_NA_AGUA  = "na_agua"   # parado aguardando
+ANZOL_SUBINDO  = "subindo"   # voltando para cima
+
+# Ponta da vara do pescador (origem da linha)
+# Calculado com base na posicao do pescador (DOCK_X+110, DOCK_Y+68) e escala 110x165
+VARA_PONTA_X = DOCK_X + 148   # proximo ao topo direito do sprite do pescador
+VARA_PONTA_Y = DOCK_Y - 80
+
 
 def load_image(subdir, name, scale=None):
     """Carrega imagem e converte para o formato da tela."""
@@ -115,6 +126,76 @@ class Pescador(pygame.sprite.Sprite):
 
 
 # ════════════════════════════════════════════════════════════════════════════
+class Anzol(pygame.sprite.Sprite):
+    """Anzol que desce e sobe na agua."""
+
+    ESCALA    = (38, 55)
+    PROF_MAX  = 200   # profundidade maxima padrao (pixels abaixo de LINHA_AGUA)
+
+    def __init__(self, vel=3):
+        super().__init__()
+        img = load_image("peixes", "anzol.png", self.ESCALA)
+        img.set_colorkey(BRANCO)
+        self.image = img
+        self.rect  = self.image.get_rect()
+
+        self.vel      = vel
+        self.prof_max = self.PROF_MAX
+        self.estado   = ANZOL_IDLE
+        self.visivel  = False
+
+        self.rect.center = (VARA_PONTA_X, VARA_PONTA_Y)
+
+    # ── Acoes ────────────────────────────────────────────────────────────────
+    def lancar(self):
+        """Inicia a descida. So funciona se o anzol estiver idle."""
+        if self.estado == ANZOL_IDLE:
+            self.rect.center = (VARA_PONTA_X, VARA_PONTA_Y)
+            self.estado  = ANZOL_DESCENDO
+            self.visivel = True
+
+    def puxar(self):
+        """Inicia a subida. So funciona se o anzol estiver parado na agua."""
+        if self.estado == ANZOL_NA_AGUA:
+            self.estado = ANZOL_SUBINDO
+
+    # ── Update ───────────────────────────────────────────────────────────────
+    def update(self, dt):
+        if self.estado == ANZOL_DESCENDO:
+            self.rect.y += self.vel
+            if self.rect.centery >= LINHA_AGUA + self.prof_max:
+                self.estado = ANZOL_NA_AGUA
+
+        elif self.estado == ANZOL_SUBINDO:
+            self.rect.y -= self.vel
+            # Ao sair da agua, some imediatamente (evita sobrepor a vara)
+            if self.rect.centery <= LINHA_AGUA:
+                self.rect.center = (VARA_PONTA_X, VARA_PONTA_Y)
+                self.estado  = ANZOL_IDLE
+                self.visivel = False
+
+    @property
+    def ponto_topo(self):
+        """Ponto superior do anzol — onde a linha se conecta."""
+        return self.rect.midtop
+
+    def draw(self, tela):
+        if self.visivel:
+            tela.blit(self.image, self.rect)
+
+
+# ════════════════════════════════════════════════════════════════════════════
+class Linha:
+    """Linha de pesca desenhada entre a ponta da vara e o anzol."""
+
+    COR       = (200, 200, 200)  # nylon transparente simulado
+    ESPESSURA = 1
+
+    def draw(self, tela, origem, destino):
+        pygame.draw.line(tela, self.COR, origem, destino, self.ESPESSURA)
+
+
+# ════════════════════════════════════════════════════════════════════════════
 class Jogo:
     def __init__(self):
         pygame.init()
@@ -132,6 +213,9 @@ class Jogo:
         # Objetos de cena (display ja ativo, pode carregar imagens)
         self.cenario  = Cenario()
         self.pescador = Pescador()
+        vel_linha = config.getint("jogador", "velocidade_linha", fallback=3)
+        self.anzol = Anzol(vel=vel_linha)
+        self.linha = Linha()
 
     # ── Loop principal ───────────────────────────────────────────────────────
     def run(self):
@@ -192,26 +276,43 @@ class Jogo:
                     self.estado = ESTADO_MENU
                 if evento.key == pygame.K_s:
                     self.estado = ESTADO_LOJA
-                # Teste visual dos estados do pescador (temporario)
                 if evento.key == pygame.K_SPACE:
-                    self.pescador.set_estado(PESC_LANCANDO)
-                if evento.key == pygame.K_p:
-                    self.pescador.set_estado(PESC_PUXANDO)
-                if evento.key == pygame.K_i:
-                    self.pescador.set_estado(PESC_IDLE)
+                    if self.anzol.estado == ANZOL_IDLE:
+                        self.anzol.lancar()
+                        self.pescador.set_estado(PESC_LANCANDO)
+                    elif self.anzol.estado == ANZOL_NA_AGUA:
+                        self.anzol.puxar()
+                        self.pescador.set_estado(PESC_PUXANDO)
 
     def _jogo_update(self, dt):
-        pass  # logica de gameplay sera implementada nos proximos passos
+        self.anzol.update(dt)
+        # Quando anzol volta ao idle, pescador volta a descansar
+        if self.anzol.estado == ANZOL_IDLE:
+            self.pescador.set_estado(PESC_IDLE)
+        # Quando anzol esta descendo, pescador fica na pose de lancando
+        elif self.anzol.estado == ANZOL_DESCENDO:
+            self.pescador.set_estado(PESC_LANCANDO)
 
     def _jogo_draw(self):
         # Cenario: fundo + agua + dock
         self.cenario.draw(self.tela)
 
-        # Pescador sobre o dock
+        # Linha de pesca (desenhada antes do anzol para ficar atras)
+        if self.anzol.visivel:
+            self.linha.draw(self.tela, (VARA_PONTA_X, VARA_PONTA_Y), self.anzol.ponto_topo)
+
+        # Pescador e anzol
         self.pescador.draw(self.tela)
+        self.anzol.draw(self.tela)
 
         # Instrucoes temporarias (remover quando HUD estiver pronto)
-        txt = self.fonte_pequena.render("ESPACO = lancar  |  S = Loja  |  ESC = Menu", True, PRETO)
+        estado_txt = {
+            ANZOL_IDLE:     "ESPACO = lancar",
+            ANZOL_DESCENDO: "linha descendo...",
+            ANZOL_NA_AGUA:  "ESPACO = puxar!",
+            ANZOL_SUBINDO:  "puxando...",
+        }.get(self.anzol.estado, "")
+        txt = self.fonte_pequena.render(f"{estado_txt}  |  S = Loja  |  ESC = Menu", True, PRETO)
         self.tela.blit(txt, (10, 10))
 
     # ── LOJA ─────────────────────────────────────────────────────────────────
