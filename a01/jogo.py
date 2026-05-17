@@ -414,6 +414,14 @@ class Jogo:
         self._fonte_excl   = pygame.font.SysFont("Arial", 36, bold=True)
         self._fonte_hud    = pygame.font.SysFont("Arial", 20, bold=True)
 
+        # HUD — icones
+        self._hud_moeda  = load_image("hud", "moeda.png",      (28, 28))
+        self._hud_peixe  = load_image("hud", "peixe_icone.png", (28, 28))
+        self._hud_excl   = load_image("hud", "exclamacao.png",  (32, 48))
+        # Superficie de fundo do HUD (semi-transparente)
+        self._hud_bg = pygame.Surface((260, 72), pygame.SRCALPHA)
+        self._hud_bg.fill((0, 0, 0, 120))
+
         # Upgrades
         self.upgrades       = carregar_upgrades()
         self.upgrades_nivel = {u["id"]: 0 for u in self.upgrades}
@@ -554,25 +562,41 @@ class Jogo:
 
         # Exclamacao quando peixe morde
         if any(p.esta_mordendo for p in self.grupo_peixes):
-            excl = self._fonte_excl.render("!", True, (255, 50, 50))
-            self.tela.blit(excl, (DOCK_X + 95, DOCK_Y - 115))
+            self.tela.blit(self._hud_excl, (DOCK_X + 98, DOCK_Y - 118))
 
-        # HUD temporario (canto superior esquerdo)
-        hud_moedas = self._fonte_hud.render(f"Moedas: {self.moedas} / {self.meta_moedas}", True, PRETO)
-        hud_peixes = self._fonte_hud.render(f"Peixes: {self.peixes_capturados}", True, PRETO)
-        self.tela.blit(hud_moedas, (10, 10))
-        self.tela.blit(hud_peixes, (10, 32))
+        # HUD — fundo semi-transparente
+        self.tela.blit(self._hud_bg, (6, 6))
 
-        # Instrucao de controle
+        # HUD — linha 1: icone moeda + contador / meta
+        self.tela.blit(self._hud_moeda, (12, 12))
+        txt_moedas = self._fonte_hud.render(f"{self.moedas}  /  {self.meta_moedas}", True, (255, 215, 0))
+        self.tela.blit(txt_moedas, (46, 16))
+
+        # HUD — linha 2: icone peixe + contador
+        self.tela.blit(self._hud_peixe, (12, 44))
+        txt_peixes = self._fonte_hud.render(f"{self.peixes_capturados} peixes", True, (200, 235, 255))
+        self.tela.blit(txt_peixes, (46, 48))
+
+        # HUD — barra de progresso de moedas (abaixo do box)
+        barra_x, barra_y, barra_w, barra_h = 6, 82, 260, 8
+        progresso = min(self.moedas / max(self.meta_moedas, 1), 1.0)
+        pygame.draw.rect(self.tela, (60, 60, 60),   (barra_x, barra_y, barra_w, barra_h), border_radius=4)
+        pygame.draw.rect(self.tela, (255, 215, 0),  (barra_x, barra_y, int(barra_w * progresso), barra_h), border_radius=4)
+        pygame.draw.rect(self.tela, (180, 180, 180),(barra_x, barra_y, barra_w, barra_h), 1, border_radius=4)
+
+        # Instrucao de controle (rodape)
         if any(p.esta_mordendo for p in self.grupo_peixes):
             dica = "ESPACO = capturar!"
-            cor_dica = (200, 0, 0)
+            cor_dica = (220, 50, 50)
         else:
             dica = {ANZOL_IDLE: "ESPACO = lancar", ANZOL_DESCENDO: "descendo...",
                     ANZOL_NA_AGUA: "ESPACO = puxar", ANZOL_SUBINDO: "puxando..."}.get(self.anzol.estado, "")
-            cor_dica = PRETO
+            cor_dica = (240, 240, 240)
+        rodape_bg = pygame.Surface((LARGURA, 24), pygame.SRCALPHA)
+        rodape_bg.fill((0, 0, 0, 130))
+        self.tela.blit(rodape_bg, (0, ALTURA - 26))
         txt = self._fonte_hud.render(f"{dica}  |  S = Loja  |  ESC = Menu", True, cor_dica)
-        self.tela.blit(txt, (10, ALTURA - 30))
+        self.tela.blit(txt, txt.get_rect(center=(LARGURA // 2, ALTURA - 14)))
 
     # ── LOJA ─────────────────────────────────────────────────────────────────
     def _loja_eventos(self):
