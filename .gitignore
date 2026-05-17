@@ -1,0 +1,18 @@
+# Ambiente virtual Python
+.venv/
+
+# Save do jogo (progresso local)
+save.ini
+
+# Cache Python
+__pycache__/
+*.py[cod]
+*.pyo
+
+# Arquivos de sistema
+.DS_Store
+Thumbs.db
+
+# IDEs
+.vscode/
+*.swp

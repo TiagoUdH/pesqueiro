@@ -10,6 +10,7 @@ ROOT_DIR    = os.path.join(BASE_DIR, "..")
 IMG_DIR     = os.path.join(ROOT_DIR, "imagens")
 SND_DIR     = os.path.join(ROOT_DIR, "sons")
 CONFIG_FILE = os.path.join(ROOT_DIR, "config.ini")
+SAVE_FILE   = os.path.join(ROOT_DIR, "save.ini")
 
 # ── Configuracoes ────────────────────────────────────────────────────────────
 config = configparser.ConfigParser()
@@ -418,6 +419,9 @@ class Jogo:
         self.upgrades_nivel = {u["id"]: 0 for u in self.upgrades}
         self._loja_selecao  = 0
 
+        # Carrega save (ja aplica efeitos dos upgrades salvos)
+        self._carregar_save()
+
     # ── Loop principal ───────────────────────────────────────────────────────
     def run(self):
         while self.rodando:
@@ -474,6 +478,7 @@ class Jogo:
                 self.rodando = False
             if evento.type == pygame.KEYDOWN:
                 if evento.key == pygame.K_ESCAPE:
+                    self._salvar()
                     self.estado = ESTADO_MENU
                 if evento.key == pygame.K_s:
                     self.estado = ESTADO_LOJA
@@ -519,6 +524,7 @@ class Jogo:
 
         # Verifica meta
         if self.moedas >= self.meta_moedas:
+            self._salvar()
             self.estado = ESTADO_FIM
 
     def _capturar_peixe(self, peixe):
@@ -528,6 +534,7 @@ class Jogo:
         pos = (peixe.rect.centerx, peixe.rect.top - 10)
         self.grupo_textos.add(TextoFlutuante(f"+{peixe.valor} moedas", pos))
         peixe.kill()
+        self._salvar()
 
     def _jogo_draw(self):
         # Cenario: fundo + agua + dock
@@ -598,6 +605,7 @@ class Jogo:
         # Texto flutuante de compra
         pos = (LARGURA // 2, ALTURA // 2)
         self.grupo_textos.add(TextoFlutuante(f"{upg['nome']} Nv.{nivel+1}!", pos, (100, 255, 100)))
+        self._salvar()
 
     def _aplicar_efeito(self, upg, novo_nivel):
         """Aplica o efeito do upgrade ao jogo."""
@@ -613,6 +621,44 @@ class Jogo:
         elif efeito == "tamanho_anzol":
             Peixe.RAIO_MORDIDA = min(Peixe.RAIO_MORDIDA + 8, 50)
         # "cenario" sera tratado no Passo visual de barco
+
+    # ── Save / Load ──────────────────────────────────────────────────────────
+    def _salvar(self):
+        """Persiste progresso em save.ini."""
+        save = configparser.ConfigParser()
+        save["jogador"] = {
+            "moedas":            str(self.moedas),
+            "peixes_capturados": str(self.peixes_capturados),
+        }
+        save["upgrades"] = {uid: str(n) for uid, n in self.upgrades_nivel.items()}
+        with open(SAVE_FILE, "w", encoding="utf-8") as f:
+            save.write(f)
+
+    def _carregar_save(self):
+        """Restaura progresso de save.ini, se existir."""
+        if not os.path.exists(SAVE_FILE):
+            return
+        save = configparser.ConfigParser()
+        save.read(SAVE_FILE, encoding="utf-8")
+        if "jogador" in save:
+            self.moedas            = save.getint("jogador", "moedas",            fallback=0)
+            self.peixes_capturados = save.getint("jogador", "peixes_capturados", fallback=0)
+        if "upgrades" in save:
+            for uid in self.upgrades_nivel:
+                self.upgrades_nivel[uid] = save.getint("upgrades", uid, fallback=0)
+        self._reaplicar_upgrades()
+
+    def _reaplicar_upgrades(self):
+        """Reseta variaveis de efeito e reaplica todos os niveis salvos."""
+        # Reset para valores base (evita acumulacao dupla)
+        Peixe.RAIO_ATRACAO = 90
+        Peixe.RAIO_MORDIDA = 22
+        self.anzol.prof_max = Anzol.PROF_MAX
+        self.anzol.vel      = config.getint("jogador", "velocidade_linha", fallback=3)
+        # Reaplicar nivel a nivel
+        for upg in self.upgrades:
+            for n in range(1, self.upgrades_nivel[upg["id"]] + 1):
+                self._aplicar_efeito(upg, n)
 
     def _loja_draw(self):
         self.tela.fill((50, 30, 10))
