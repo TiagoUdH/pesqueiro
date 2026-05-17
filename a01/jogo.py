@@ -137,7 +137,7 @@ class Anzol(pygame.sprite.Sprite):
     """Anzol que desce e sobe na agua."""
 
     ESCALA    = (38, 55)
-    PROF_MAX  = 200   # profundidade maxima padrao (pixels abaixo de LINHA_AGUA)
+    PROF_MAX  = 120   # profundidade maxima padrao (pixels abaixo de LINHA_AGUA)
 
     def __init__(self, vel=3):
         super().__init__()
@@ -331,6 +331,24 @@ def escolher_tipo_peixe(tipos):
     return random.choices(tipos, weights=pesos, k=1)[0]
 
 
+def carregar_upgrades():
+    """Le config.ini e retorna lista de dicts com dados de cada upgrade."""
+    upgs = []
+    num = config.getint("upgrades", "num", fallback=0)
+    for i in range(num):
+        sec = f"upgrade{i}"
+        upgs.append({
+            "id":           config.get(sec, "id"),
+            "nome":         config.get(sec, "nome"),
+            "descricao":    config.get(sec, "descricao"),
+            "efeito":       config.get(sec, "efeito"),
+            "valor_base":   config.getint(sec, "valor_base"),
+            "custo_base":   config.getint(sec, "custo_base"),
+            "maximo_nivel": config.getint(sec, "maximo_nivel"),
+        })
+    return upgs
+
+
 # ════════════════════════════════════════════════════════════════════════════
 class TextoFlutuante(pygame.sprite.Sprite):
     """Texto que sobe e desaparece na tela (ex: '+10 moedas')."""
@@ -394,6 +412,11 @@ class Jogo:
         self.grupo_textos  = pygame.sprite.Group()
         self._fonte_excl   = pygame.font.SysFont("Arial", 36, bold=True)
         self._fonte_hud    = pygame.font.SysFont("Arial", 20, bold=True)
+
+        # Upgrades
+        self.upgrades       = carregar_upgrades()
+        self.upgrades_nivel = {u["id"]: 0 for u in self.upgrades}
+        self._loja_selecao  = 0
 
     # ── Loop principal ───────────────────────────────────────────────────────
     def run(self):
@@ -552,13 +575,115 @@ class Jogo:
             if evento.type == pygame.KEYDOWN:
                 if evento.key in (pygame.K_ESCAPE, pygame.K_s):
                     self.estado = ESTADO_JOGANDO
+                elif evento.key == pygame.K_UP:
+                    self._loja_selecao = (self._loja_selecao - 1) % len(self.upgrades)
+                elif evento.key == pygame.K_DOWN:
+                    self._loja_selecao = (self._loja_selecao + 1) % len(self.upgrades)
+                elif evento.key == pygame.K_RETURN:
+                    self._comprar_upgrade(self.upgrades[self._loja_selecao])
+
+    def _comprar_upgrade(self, upg):
+        """Tenta comprar o upgrade selecionado."""
+        uid    = upg["id"]
+        nivel  = self.upgrades_nivel[uid]
+        maximo = upg["maximo_nivel"]
+        if nivel >= maximo:
+            return  # ja no maximo
+        custo = upg["custo_base"] * (nivel + 1)
+        if self.moedas < custo:
+            return  # sem moedas
+        self.moedas -= custo
+        self.upgrades_nivel[uid] = nivel + 1
+        self._aplicar_efeito(upg, nivel + 1)
+        # Texto flutuante de compra
+        pos = (LARGURA // 2, ALTURA // 2)
+        self.grupo_textos.add(TextoFlutuante(f"{upg['nome']} Nv.{nivel+1}!", pos, (100, 255, 100)))
+
+    def _aplicar_efeito(self, upg, novo_nivel):
+        """Aplica o efeito do upgrade ao jogo."""
+        efeito = upg["efeito"]
+        valor  = upg["valor_base"]
+        if efeito == "profundidade":
+            limite = ALTURA - LINHA_AGUA - 20   # margem de 20px antes do fundo
+            self.anzol.prof_max = min(self.anzol.prof_max + valor, limite)
+        elif efeito == "velocidade_linha":
+            self.anzol.vel += valor
+        elif efeito == "chance_mordida":
+            Peixe.RAIO_ATRACAO = min(Peixe.RAIO_ATRACAO + valor, 180)
+        elif efeito == "tamanho_anzol":
+            Peixe.RAIO_MORDIDA = min(Peixe.RAIO_MORDIDA + 8, 50)
+        # "cenario" sera tratado no Passo visual de barco
 
     def _loja_draw(self):
-        self.tela.fill(MARROM)
-        titulo = self.fonte_titulo.render("Loja de Upgrades", True, BRANCO)
-        voltar = self.fonte_normal.render("ESC ou S - Voltar ao jogo", True, BRANCO)
-        self.tela.blit(titulo, titulo.get_rect(center=(LARGURA//2, 60)))
-        self.tela.blit(voltar, voltar.get_rect(center=(LARGURA//2, ALTURA - 40)))
+        self.tela.fill((50, 30, 10))
+
+        # Titulo
+        titulo = self.fonte_titulo.render("Loja de Upgrades", True, (255, 215, 0))
+        self.tela.blit(titulo, titulo.get_rect(center=(LARGURA // 2, 38)))
+
+        # Moedas centralizadas
+        moedas_txt = self.fonte_normal.render(f"Moedas disponíveis:  {self.moedas}", True, (255, 215, 0))
+        self.tela.blit(moedas_txt, moedas_txt.get_rect(center=(LARGURA // 2, 74)))
+
+        # Separador
+        pygame.draw.line(self.tela, (120, 80, 30), (40, 90), (LARGURA - 40, 90), 1)
+
+        # Itens — distribuição dinâmica
+        margem_x = 40
+        y0       = 98
+        gap      = 8                                     # espaco entre itens
+        n        = len(self.upgrades)
+        linha_h  = (ALTURA - 30 - y0) // n              # ~94 px por item
+        rect_h   = linha_h - gap
+
+        for i, upg in enumerate(self.upgrades):
+            uid    = upg["id"]
+            nivel  = self.upgrades_nivel[uid]
+            maximo = upg["maximo_nivel"]
+            custo  = upg["custo_base"] * (nivel + 1)
+            sel    = (i == self._loja_selecao)
+
+            ry = y0 + i * linha_h
+            rect_item = pygame.Rect(margem_x, ry, LARGURA - 2 * margem_x, rect_h)
+
+            # Fundo
+            cor_fundo = (110, 72, 28) if sel else (72, 46, 14)
+            pygame.draw.rect(self.tela, cor_fundo, rect_item, border_radius=8)
+            if sel:
+                pygame.draw.rect(self.tela, (255, 215, 0), rect_item, 2, border_radius=8)
+
+            # Linha 1 — Nome  [Nv. x/max]
+            nivel_str = f"Nv. {nivel}/{maximo}"
+            nome_surf = self.fonte_normal.render(f"{upg['nome']}  [{nivel_str}]", True, BRANCO)
+            self.tela.blit(nome_surf, (rect_item.x + 14, rect_item.y + 8))
+
+            # Linha 2 — Descricao
+            desc_surf = self.fonte_pequena.render(upg["descricao"], True, (200, 200, 200))
+            self.tela.blit(desc_surf, (rect_item.x + 14, rect_item.y + rect_h // 2 - 4))
+
+            # Linha 3 — Status (alinhado a direita)
+            if nivel >= maximo:
+                status_txt = "JA MAXIMO"
+                cor_status = (100, 255, 100)
+            elif self.moedas >= custo:
+                status_txt = f"ENTER = comprar  ({custo} moedas)"
+                cor_status = (255, 215, 0)
+            else:
+                status_txt = f"Precisa  {custo} moedas"
+                cor_status = (220, 80, 80)
+            status_surf = self.fonte_normal.render(status_txt, True, cor_status)
+            self.tela.blit(status_surf, (rect_item.right - status_surf.get_width() - 14,
+                                         rect_item.bottom - status_surf.get_height() - 8))
+
+        # Textos flutuantes sobre a loja
+        self.grupo_textos.draw(self.tela)
+        self.grupo_textos.update()
+
+        # Rodape
+        voltar = self.fonte_pequena.render(
+            "↑↓ = navegar  |  ENTER = comprar  |  S ou ESC = voltar",
+            True, (160, 160, 160))
+        self.tela.blit(voltar, voltar.get_rect(center=(LARGURA // 2, ALTURA - 14)))
 
     # ── FIM ──────────────────────────────────────────────────────────────────
     def _fim_eventos(self):
