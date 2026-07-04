@@ -647,6 +647,15 @@ class Jogo:
         # "cenario" sera tratado no Passo visual de barco
 
     # ── Save / Load ──────────────────────────────────────────────────────────
+    def _resetar_progresso(self):
+        """Zera moedas, peixes, upgrades e apaga o save."""
+        self.moedas            = 0
+        self.peixes_capturados = 0
+        self.upgrades_nivel    = {uid: 0 for uid in self.upgrades_nivel}
+        if os.path.exists(SAVE_FILE):
+            os.remove(SAVE_FILE)
+        self._reaplicar_upgrades()
+
     def _salvar(self):
         """Persiste progresso em save.ini."""
         save = configparser.ConfigParser()
@@ -762,14 +771,16 @@ class Jogo:
                 self.rodando = False
             if evento.type == pygame.KEYDOWN:
                 if evento.key == pygame.K_RETURN:
-                    self.estado = ESTADO_MENU
+                    self._resetar_progresso()
+                    self.estado = ESTADO_JOGANDO
                 if evento.key == pygame.K_ESCAPE:
-                    self.rodando = False
+                    self._resetar_progresso()
+                    self.estado = ESTADO_MENU
 
     def _fim_draw(self):
         self.tela.fill(PRETO)
         msg = self.fonte_titulo.render("Voce e o melhor pescador!", True, (255, 215, 0))
-        sub = self.fonte_normal.render("ENTER - Menu  |  ESC - Sair", True, BRANCO)
+        sub = self.fonte_normal.render("ENTER - Jogar de novo  |  ESC - Menu", True, BRANCO)
         self.tela.blit(msg, msg.get_rect(center=(LARGURA//2, ALTURA//2 - 30)))
         self.tela.blit(sub, sub.get_rect(center=(LARGURA//2, ALTURA//2 + 30)))
 
