@@ -55,6 +55,7 @@ ANZOL_SUBINDO  = "subindo"   # voltando para cima
 PEIXE_NADANDO  = "nadando"   # nadando livremente
 PEIXE_ATRAIDO  = "atraido"   # indo em direcao ao anzol
 PEIXE_MORDENDO = "mordendo"  # tocando o anzol, esperando o pull
+PEIXE_CAPTURADO = "capturado"  # fisgado, subindo com o anzol
 PEIXE_FUGINDO  = "fugindo"   # escapou, afasta do anzol
 
 # Ponta da vara do pescador (origem da linha)
@@ -230,6 +231,7 @@ class Peixe(pygame.sprite.Sprite):
         self.dir       = random.choice([-1, 1])           # -1 esq, +1 dir
         self.vel       = self.vel_base * self.dir
         self._fuga_timer = 0
+        self.capturado = False
 
         self.image = self._img_dir if self.dir > 0 else self._img_esq
         self.rect  = self.image.get_rect()
@@ -243,10 +245,10 @@ class Peixe(pygame.sprite.Sprite):
             self.rect.midleft  = (LARGURA, y)
 
     # ── Update ───────────────────────────────────────────────────────────────
-    def update(self, anzol):
+    def update(self, anzol, isca_ocupada=False):
         if self.estado == PEIXE_NADANDO:
             self.rect.x += self.vel
-            self._checar_atracoes(anzol)
+            self._checar_atracoes(anzol, isca_ocupada)
             self._checar_bordas()
 
         elif self.estado == PEIXE_ATRAIDO:
@@ -273,14 +275,22 @@ class Peixe(pygame.sprite.Sprite):
             else:
                 self.estado = PEIXE_FUGINDO
 
+        elif self.estado == PEIXE_CAPTURADO:
+            if anzol.visivel:
+                self.rect.center = anzol.rect.center
+            else:
+                self.capturado = True
+
         elif self.estado == PEIXE_FUGINDO:
             self.rect.x += self.vel_base * 2 * self.dir
             self._fuga_timer += 1
             if self._fuga_timer >= self.TEMPO_FUGA or self._saiu_da_tela():
                 self.kill()
 
-    def _checar_atracoes(self, anzol):
+    def _checar_atracoes(self, anzol, isca_ocupada):
         if not anzol.visivel or anzol.estado != ANZOL_NA_AGUA:
+            return
+        if isca_ocupada:
             return
         dx = anzol.rect.centerx - self.rect.centerx
         dy = anzol.rect.centery - self.rect.centery
@@ -495,14 +505,13 @@ class Jogo:
                         self.anzol.lancar()
                         self.pescador.set_estado(PESC_LANCANDO)
                     elif self.anzol.estado == ANZOL_NA_AGUA:
-                        # Verifica se algum peixe esta mordendo
                         capturado = None
                         for p in self.grupo_peixes:
                             if p.esta_mordendo:
                                 capturado = p
                                 break
                         if capturado:
-                            self._capturar_peixe(capturado)
+                            capturado.estado = PEIXE_CAPTURADO
                         self.anzol.puxar()
                         self.pescador.set_estado(PESC_PUXANDO)
 
@@ -524,8 +533,14 @@ class Jogo:
                 self.grupo_peixes.add(Peixe(tipo))
 
         # Atualiza todos os peixes
+        isca_ocupada = any(p.estado in (PEIXE_ATRAIDO, PEIXE_MORDENDO) for p in self.grupo_peixes)
         for peixe in self.grupo_peixes:
-            peixe.update(self.anzol)
+            peixe.update(self.anzol, isca_ocupada)
+
+        # Finaliza peixes que subiram com o anzol ate a superficie
+        for peixe in list(self.grupo_peixes):
+            if peixe.capturado:
+                self._capturar_peixe(peixe)
 
         # Atualiza textos flutuantes
         self.grupo_textos.update()
