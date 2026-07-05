@@ -429,7 +429,7 @@ class Jogo:
         self._hud_peixe  = load_image("hud", "peixe_icone.png", (28, 28))
         self._hud_excl   = load_image("hud", "exclamacao.png",  (32, 48))
         # Superficie de fundo do HUD (semi-transparente)
-        self._hud_bg = pygame.Surface((260, 72), pygame.SRCALPHA)
+        self._hud_bg = pygame.Surface((260, 96), pygame.SRCALPHA)
         self._hud_bg.fill((0, 0, 0, 120))
 
         # Upgrades
@@ -475,6 +475,8 @@ class Jogo:
             if evento.type == pygame.KEYDOWN:
                 if evento.key == pygame.K_RETURN:
                     self.estado = ESTADO_JOGANDO
+                if evento.key == pygame.K_s:
+                    self.estado = ESTADO_LOJA
                 if evento.key == pygame.K_ESCAPE:
                     self.rodando = False
 
@@ -545,8 +547,8 @@ class Jogo:
         # Atualiza textos flutuantes
         self.grupo_textos.update()
 
-        # Verifica meta
-        if self.moedas >= self.meta_moedas:
+        # Verifica meta: moedas + todos os upgrades no maximo
+        if self.moedas >= self.meta_moedas and self._todos_upgrades_maximos():
             self._salvar()
             self.estado = ESTADO_FIM
 
@@ -592,12 +594,26 @@ class Jogo:
         txt_peixes = self._fonte_hud.render(f"{self.peixes_capturados} peixes", True, (200, 235, 255))
         self.tela.blit(txt_peixes, (46, 48))
 
+        # HUD — linha 3: upgrades completos
+        upg_completos = sum(1 for u in self.upgrades if self.upgrades_nivel.get(u["id"], 0) >= u["maximo_nivel"])
+        upg_total = len(self.upgrades)
+        cor_upg = (180, 255, 180) if upg_completos >= upg_total else (180, 220, 180)
+        txt_upg = self._fonte_hud.render(f"Upgrades: {upg_completos}/{upg_total}", True, cor_upg)
+        self.tela.blit(txt_upg, (12, 76))
+
         # HUD — barra de progresso de moedas (abaixo do box)
-        barra_x, barra_y, barra_w, barra_h = 6, 82, 260, 8
+        barra_x, barra_y, barra_w, barra_h = 6, 106, 260, 6
         progresso = min(self.moedas / max(self.meta_moedas, 1), 1.0)
-        pygame.draw.rect(self.tela, (60, 60, 60),   (barra_x, barra_y, barra_w, barra_h), border_radius=4)
-        pygame.draw.rect(self.tela, (255, 215, 0),  (barra_x, barra_y, int(barra_w * progresso), barra_h), border_radius=4)
-        pygame.draw.rect(self.tela, (180, 180, 180),(barra_x, barra_y, barra_w, barra_h), 1, border_radius=4)
+        pygame.draw.rect(self.tela, (60, 60, 60),   (barra_x, barra_y, barra_w, barra_h), border_radius=3)
+        pygame.draw.rect(self.tela, (255, 215, 0),  (barra_x, barra_y, int(barra_w * progresso), barra_h), border_radius=3)
+        pygame.draw.rect(self.tela, (180, 180, 180),(barra_x, barra_y, barra_w, barra_h), 1, border_radius=3)
+
+        # HUD — barra de progresso de upgrades
+        barra_y2 = barra_y + barra_h + 4
+        upg_progresso = upg_completos / max(upg_total, 1)
+        pygame.draw.rect(self.tela, (60, 60, 60),   (barra_x, barra_y2, barra_w, barra_h), border_radius=3)
+        pygame.draw.rect(self.tela, (100, 180, 255),(barra_x, barra_y2, int(barra_w * upg_progresso), barra_h), border_radius=3)
+        pygame.draw.rect(self.tela, (180, 180, 180),(barra_x, barra_y2, barra_w, barra_h), 1, border_radius=3)
 
         # Instrucao de controle (rodape)
         if any(p.esta_mordendo for p in self.grupo_peixes):
@@ -645,6 +661,12 @@ class Jogo:
         pos = (LARGURA // 2, ALTURA // 2)
         self.grupo_textos.add(TextoFlutuante(f"{upg['nome']} Nv.{nivel+1}!", pos, (100, 255, 100)))
         self._salvar()
+
+    def _todos_upgrades_maximos(self):
+        for upg in self.upgrades:
+            if self.upgrades_nivel.get(upg["id"], 0) < upg["maximo_nivel"]:
+                return False
+        return True
 
     def _aplicar_efeito(self, upg, novo_nivel):
         """Aplica o efeito do upgrade ao jogo."""
@@ -794,10 +816,14 @@ class Jogo:
 
     def _fim_draw(self):
         self.tela.fill(PRETO)
-        msg = self.fonte_titulo.render("Voce e o melhor pescador!", True, (255, 215, 0))
+        msg = self.fonte_titulo.render("Parabens! Voce zerou o Pesqueiro!", True, (255, 215, 0))
+        linha1 = self.fonte_normal.render(
+            f"Moedas: {self.moedas}  |  Peixes: {self.peixes_capturados}  |  Upgrades: completos",
+            True, (200, 235, 255))
         sub = self.fonte_normal.render("ENTER - Jogar de novo  |  ESC - Menu", True, BRANCO)
-        self.tela.blit(msg, msg.get_rect(center=(LARGURA//2, ALTURA//2 - 30)))
-        self.tela.blit(sub, sub.get_rect(center=(LARGURA//2, ALTURA//2 + 30)))
+        self.tela.blit(msg, msg.get_rect(center=(LARGURA//2, ALTURA//2 - 50)))
+        self.tela.blit(linha1, linha1.get_rect(center=(LARGURA//2, ALTURA//2)))
+        self.tela.blit(sub, sub.get_rect(center=(LARGURA//2, ALTURA//2 + 40)))
 
 
 # ── Iniciar ──────────────────────────────────────────────────────────────────
