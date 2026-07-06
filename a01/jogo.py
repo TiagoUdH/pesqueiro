@@ -537,10 +537,12 @@ class Jogo:
                 tipo = escolher_tipo_peixe(self.tipos_peixe)
                 self.grupo_peixes.add(Peixe(tipo))
 
-        # Atualiza todos os peixes
-        isca_ocupada = any(p.estado in (PEIXE_ATRAIDO, PEIXE_MORDENDO) for p in self.grupo_peixes)
+        # Atualiza todos os peixes — apenas um peixe persegue o anzol por vez
+        isca_ocupada = False
         for peixe in self.grupo_peixes:
             peixe.update(self.anzol, isca_ocupada)
+            if peixe.estado in (PEIXE_ATRAIDO, PEIXE_MORDENDO):
+                isca_ocupada = True
 
         # Finaliza peixes que subiram com o anzol ate a superficie
         for peixe in list(self.grupo_peixes):
