@@ -388,6 +388,32 @@ class TextoFlutuante(pygame.sprite.Sprite):
 
 
 # ════════════════════════════════════════════════════════════════════════════
+class ParticulaSplash(pygame.sprite.Sprite):
+    """Gotícula de água que espirra quando o anzol sai sem peixe."""
+
+    def __init__(self, x, y):
+        super().__init__()
+        size = random.randint(2, 5)
+        self.image = pygame.Surface((size, size), pygame.SRCALPHA)
+        self.image.fill((200, 220, 255, 180))
+        self.rect = self.image.get_rect(center=(x, y))
+        self.vx = random.uniform(-2.5, 2.5)
+        self.vy = random.uniform(-4.0, -1.5)
+        self._timer = 0
+        self._duracao = random.randint(25, 45)
+
+    def update(self):
+        self._timer += 1
+        self.rect.x += int(self.vx)
+        self.rect.y += int(self.vy)
+        self.vy += 0.15
+        alpha = max(0, 255 - int(255 * self._timer / self._duracao))
+        self.image.set_alpha(alpha)
+        if self._timer >= self._duracao:
+            self.kill()
+
+
+# ════════════════════════════════════════════════════════════════════════════
 class Jogo:
     def __init__(self):
         pygame.init()
@@ -414,6 +440,10 @@ class Jogo:
         self.grupo_peixes    = pygame.sprite.Group()
         self._spawn_timer    = 0
         self._spawn_intervalo = 120
+
+        self._cooldown_timer = 0
+        self._pull_vazio     = False
+        self.grupo_particulas = pygame.sprite.Group()
 
         # Pontuacao
         self.moedas            = config.getint("jogador", "moedas_iniciais", fallback=0)
@@ -529,8 +559,11 @@ class Jogo:
                     self.estado = ESTADO_LOJA
                 if evento.key == pygame.K_SPACE:
                     if self.anzol.estado == ANZOL_IDLE:
+                        if self._cooldown_timer > 0:
+                            continue
                         self.anzol.lancar()
                         self.pescador.set_estado(PESC_LANCANDO)
+                        self._pull_vazio = False
                     elif self.anzol.estado == ANZOL_NA_AGUA:
                         capturado = None
                         for p in self.grupo_peixes:
@@ -539,15 +572,28 @@ class Jogo:
                                 break
                         if capturado:
                             capturado.estado = PEIXE_CAPTURADO
+                            self._pull_vazio = False
+                        else:
+                            self._pull_vazio = True
                         self.anzol.puxar()
                         self.pescador.set_estado(PESC_PUXANDO)
 
     def _jogo_update(self, dt):
         self.anzol.update(dt)
-        # Quando anzol volta ao idle, pescador volta a descansar
+
+        if self._cooldown_timer > 0:
+            self._cooldown_timer -= 1
+
         if self.anzol.estado == ANZOL_IDLE:
             self.pescador.set_estado(PESC_IDLE)
-        # Quando anzol esta descendo, pescador fica na pose de lancando
+            if self._pull_vazio:
+                self._pull_vazio = False
+                self._cooldown_timer = 120
+                self.grupo_textos.add(TextoFlutuante("Nada...",
+                    (VARA_PONTA_X + 20, LINHA_AGUA - 14), (180, 200, 255)))
+                for _ in range(12):
+                    self.grupo_particulas.add(
+                        ParticulaSplash(VARA_PONTA_X + 20, LINHA_AGUA))
         elif self.anzol.estado == ANZOL_DESCENDO:
             self.pescador.set_estado(PESC_LANCANDO)
 
@@ -573,6 +619,7 @@ class Jogo:
 
         # Atualiza textos flutuantes
         self.grupo_textos.update()
+        self.grupo_particulas.update()
 
         # Verifica meta: moedas + todos os upgrades no maximo
         if self.moedas >= self.meta_moedas and self._todos_upgrades_maximos():
@@ -599,6 +646,7 @@ class Jogo:
         # Pescador e anzol
         self.pescador.draw(self.tela)
         self.grupo_peixes.draw(self.tela)
+        self.grupo_particulas.draw(self.tela)
         self.anzol.draw(self.tela)
 
         # Textos flutuantes
@@ -643,7 +691,10 @@ class Jogo:
         pygame.draw.rect(self.tela, (180, 180, 180),(barra_x, barra_y2, barra_w, barra_h), 1, border_radius=3)
 
         # Instrucao de controle (rodape)
-        if any(p.esta_mordendo for p in self.grupo_peixes):
+        if self._cooldown_timer > 0:
+            dica = f"Aguarde... ({self._cooldown_timer // 10 + 1})"
+            cor_dica = (255, 180, 100)
+        elif any(p.esta_mordendo for p in self.grupo_peixes):
             dica = "ESPACO = capturar!"
             cor_dica = (220, 50, 50)
         else:
