@@ -481,11 +481,14 @@ class Jogo:
                     self.rodando = False
 
     def _menu_draw(self):
-        self.tela.fill(AZUL_CEU)
-        titulo = self.fonte_titulo.render(TITULO, True, MARROM)
-        instrucao = self.fonte_normal.render("ENTER  - Jogar", True, PRETO)
-        instrucao2 = self.fonte_normal.render("S      - Loja de upgrades", True, PRETO)
-        instrucao3 = self.fonte_normal.render("ESC    - Sair", True, PRETO)
+        self.cenario.draw(self.tela)
+        overlay = pygame.Surface((LARGURA, ALTURA), pygame.SRCALPHA)
+        overlay.fill((0, 0, 0, 100))
+        self.tela.blit(overlay, (0, 0))
+        titulo = self.fonte_titulo.render(TITULO, True, (255, 215, 0))
+        instrucao = self.fonte_normal.render("ENTER  - Jogar", True, BRANCO)
+        instrucao2 = self.fonte_normal.render("S      - Loja de upgrades", True, BRANCO)
+        instrucao3 = self.fonte_normal.render("ESC    - Sair", True, BRANCO)
         self.tela.blit(titulo,     titulo.get_rect(center=(LARGURA//2, ALTURA//3)))
         self.tela.blit(instrucao,  instrucao.get_rect(center=(LARGURA//2, ALTURA//2)))
         self.tela.blit(instrucao2, instrucao2.get_rect(center=(LARGURA//2, ALTURA//2 + 40)))
@@ -815,7 +818,10 @@ class Jogo:
                     self.estado = ESTADO_MENU
 
     def _fim_draw(self):
-        self.tela.fill(PRETO)
+        self.cenario.draw(self.tela)
+        overlay = pygame.Surface((LARGURA, ALTURA), pygame.SRCALPHA)
+        overlay.fill((0, 0, 0, 140))
+        self.tela.blit(overlay, (0, 0))
         msg = self.fonte_titulo.render("Parabens! Voce zerou o Pesqueiro!", True, (255, 215, 0))
         linha1 = self.fonte_normal.render(
             f"Moedas: {self.moedas}  |  Peixes: {self.peixes_capturados}  |  Upgrades: completos",
