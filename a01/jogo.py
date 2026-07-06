@@ -441,6 +441,8 @@ class Jogo:
         # Carrega save (ja aplica efeitos dos upgrades salvos)
         self._carregar_save()
 
+        self._reset_msg_timer = 0
+
     # ── Loop principal ───────────────────────────────────────────────────────
     def run(self):
         while self.rodando:
@@ -474,6 +476,8 @@ class Jogo:
 
     # ── MENU ─────────────────────────────────────────────────────────────────
     def _menu_eventos(self):
+        if self._reset_msg_timer > 0:
+            self._reset_msg_timer -= 1
         for evento in pygame.event.get():
             if evento.type == pygame.QUIT:
                 self.rodando = False
@@ -482,6 +486,9 @@ class Jogo:
                     self.estado = ESTADO_JOGANDO
                 if evento.key == pygame.K_s:
                     self.estado = ESTADO_LOJA
+                if evento.key == pygame.K_r:
+                    self._resetar_progresso()
+                    self._reset_msg_timer = 90
                 if evento.key == pygame.K_ESCAPE:
                     self.rodando = False
 
@@ -493,11 +500,19 @@ class Jogo:
         titulo = self.fonte_titulo.render(TITULO, True, (255, 215, 0))
         instrucao = self.fonte_normal.render("ENTER  - Jogar", True, BRANCO)
         instrucao2 = self.fonte_normal.render("S      - Loja de upgrades", True, BRANCO)
-        instrucao3 = self.fonte_normal.render("ESC    - Sair", True, BRANCO)
+        instrucao3 = self.fonte_normal.render("R      - Resetar progresso", True, (255, 180, 180))
+        instrucao4 = self.fonte_normal.render("ESC    - Sair", True, BRANCO)
         self.tela.blit(titulo,     titulo.get_rect(center=(LARGURA//2, ALTURA//3)))
         self.tela.blit(instrucao,  instrucao.get_rect(center=(LARGURA//2, ALTURA//2)))
         self.tela.blit(instrucao2, instrucao2.get_rect(center=(LARGURA//2, ALTURA//2 + 40)))
         self.tela.blit(instrucao3, instrucao3.get_rect(center=(LARGURA//2, ALTURA//2 + 80)))
+        self.tela.blit(instrucao4, instrucao4.get_rect(center=(LARGURA//2, ALTURA//2 + 120)))
+
+        if self._reset_msg_timer > 0:
+            alpha = min(255, self._reset_msg_timer * 2)
+            msg = self.fonte_normal.render("Progresso resetado!", True, (255, 100, 100))
+            msg.set_alpha(alpha)
+            self.tela.blit(msg, msg.get_rect(center=(LARGURA//2, ALTURA - 40)))
 
     # ── JOGANDO ───────────────────────────────────────────────────────────────
     def _jogo_eventos(self):
