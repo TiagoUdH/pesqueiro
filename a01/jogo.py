@@ -39,6 +39,7 @@ ESTADO_MENU    = "menu"
 ESTADO_JOGANDO = "jogando"
 ESTADO_LOJA    = "loja"
 ESTADO_FIM     = "fim"
+ESTADO_PAUSA   = "pausa"
 
 # ── Estados do pescador ──────────────────────────────────────────────────────
 PESC_IDLE     = "idle"
@@ -454,6 +455,10 @@ class Jogo:
                 self._jogo_update(dt)
                 self._jogo_draw()
 
+            elif self.estado == ESTADO_PAUSA:
+                self._pausa_eventos()
+                self._pausa_draw()
+
             elif self.estado == ESTADO_LOJA:
                 self._loja_eventos()
                 self._loja_draw()
@@ -503,6 +508,8 @@ class Jogo:
                 if evento.key == pygame.K_ESCAPE:
                     self._salvar()
                     self.estado = ESTADO_MENU
+                if evento.key == pygame.K_p:
+                    self.estado = ESTADO_PAUSA
                 if evento.key == pygame.K_s:
                     self.estado = ESTADO_LOJA
                 if evento.key == pygame.K_SPACE:
@@ -538,7 +545,7 @@ class Jogo:
                 self.grupo_peixes.add(Peixe(tipo))
 
         # Atualiza todos os peixes — apenas um peixe persegue o anzol por vez
-        isca_ocupada = False
+        isca_ocupada = any(p.estado in (PEIXE_ATRAIDO, PEIXE_MORDENDO) for p in self.grupo_peixes)
         for peixe in self.grupo_peixes:
             peixe.update(self.anzol, isca_ocupada)
             if peixe.estado in (PEIXE_ATRAIDO, PEIXE_MORDENDO):
@@ -631,8 +638,30 @@ class Jogo:
         rodape_bg = pygame.Surface((LARGURA, 24), pygame.SRCALPHA)
         rodape_bg.fill((0, 0, 0, 130))
         self.tela.blit(rodape_bg, (0, ALTURA - 26))
-        txt = self._fonte_hud.render(f"{dica}  |  S = Loja  |  ESC = Menu", True, cor_dica)
+        txt = self._fonte_hud.render(f"{dica}  |  S = Loja  |  P = Pausa  |  ESC = Menu", True, cor_dica)
         self.tela.blit(txt, txt.get_rect(center=(LARGURA // 2, ALTURA - 14)))
+
+    # ── PAUSA ────────────────────────────────────────────────────────────────
+    def _pausa_eventos(self):
+        for evento in pygame.event.get():
+            if evento.type == pygame.QUIT:
+                self.rodando = False
+            if evento.type == pygame.KEYDOWN:
+                if evento.key == pygame.K_p:
+                    self.estado = ESTADO_JOGANDO
+                if evento.key == pygame.K_ESCAPE:
+                    self._salvar()
+                    self.estado = ESTADO_MENU
+
+    def _pausa_draw(self):
+        self._jogo_draw()
+        overlay = pygame.Surface((LARGURA, ALTURA), pygame.SRCALPHA)
+        overlay.fill((0, 0, 0, 140))
+        self.tela.blit(overlay, (0, 0))
+        txt = self.fonte_titulo.render("PAUSADO", True, (255, 215, 0))
+        sub = self.fonte_normal.render("P = continuar  |  ESC = Menu", True, BRANCO)
+        self.tela.blit(txt, txt.get_rect(center=(LARGURA // 2, ALTURA // 2 - 20)))
+        self.tela.blit(sub, sub.get_rect(center=(LARGURA // 2, ALTURA // 2 + 30)))
 
     # ── LOJA ─────────────────────────────────────────────────────────────────
     def _loja_eventos(self):
