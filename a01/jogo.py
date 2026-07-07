@@ -229,12 +229,13 @@ class Peixe(pygame.sprite.Sprite):
     RAIO_ATRACAO  = 90   # distancia para começar a ir ao anzol
     RAIO_MORDIDA  = 22   # distancia para considerar mordida
     TEMPO_FUGA    = 120  # frames que o peixe fica fugindo antes de sumir
+    VEL_MULT      = 1.0  # multiplicador de velocidade conforme dificuldade
 
     def __init__(self, dados, agua_y=LINHA_AGUA_PADRAO):
         super().__init__()
         self.nome      = dados["nome"]
         self.valor     = dados["valor"]
-        self.vel_base  = dados["velocidade"]
+        self.vel_base  = dados["velocidade"] * Peixe.VEL_MULT
         self.prof_min  = dados["profundidade_min"]
         self.prof_max  = dados["profundidade_max"]
 
@@ -461,6 +462,7 @@ class Jogo:
         self.grupo_peixes    = pygame.sprite.Group()
         self._spawn_timer    = 0
         self._spawn_intervalo = 120
+        self._max_peixes      = 5
 
         self._cooldown_timer = 0
         self._pull_vazio     = False
@@ -658,7 +660,7 @@ class Jogo:
         self._spawn_timer += 1
         if self._spawn_timer >= self._spawn_intervalo:
             self._spawn_timer = 0
-            if len(self.grupo_peixes) < 5:  # maximo de 5 peixes ao mesmo tempo
+            if len(self.grupo_peixes) < self._max_peixes:
                 tipo = escolher_tipo_peixe(self.tipos_peixe, self.barco_comprado)
                 self.grupo_peixes.add(Peixe(tipo, self._agua_y))
 
@@ -759,7 +761,9 @@ class Jogo:
         rodape_bg = pygame.Surface((LARGURA, 24), pygame.SRCALPHA)
         rodape_bg.fill((0, 0, 0, 130))
         self.tela.blit(rodape_bg, (0, ALTURA - 26))
-        txt = self._fonte_hud.render(f"{dica}  |  S = Loja  |  P = Pausa  |  ESC = Menu", True, cor_dica)
+        nivel_dif = sum(self.upgrades_nivel.values())
+        txt = self._fonte_hud.render(
+            f"{dica}  |  Nv. {nivel_dif}  |  S = Loja  |  P = Pausa  |  ESC = Menu", True, cor_dica)
         self.tela.blit(txt, txt.get_rect(center=(LARGURA // 2, ALTURA - 14)))
 
     # ── PAUSA ────────────────────────────────────────────────────────────────
@@ -812,6 +816,7 @@ class Jogo:
         self.moedas -= custo
         self.upgrades_nivel[uid] = nivel + 1
         self._aplicar_efeito(upg, nivel + 1)
+        self._atualizar_dificuldade()
         # Texto flutuante de compra
         pos = (LARGURA // 2, ALTURA // 2)
         self.grupo_textos.add(TextoFlutuante(f"{upg['nome']} Nv.{nivel+1}!", pos, (100, 255, 100)))
@@ -839,7 +844,14 @@ class Jogo:
         elif efeito == "cenario":
             if not self.barco_comprado:
                 self.barco_comprado = True
-                self._atualizar_layout()
+        self._atualizar_layout()
+        self._atualizar_dificuldade()
+
+    def _atualizar_dificuldade(self):
+        nivel_total = sum(self.upgrades_nivel.values())
+        self._spawn_intervalo = max(40, 120 - nivel_total * 7)
+        self._max_peixes      = min(9, 5 + nivel_total // 3)
+        Peixe.VEL_MULT        = 1.0 + nivel_total * 0.05
 
     # ── Save / Load ──────────────────────────────────────────────────────────
     def _resetar_progresso(self):
