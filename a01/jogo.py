@@ -40,6 +40,7 @@ ESTADO_JOGANDO = "jogando"
 ESTADO_LOJA    = "loja"
 ESTADO_FIM     = "fim"
 ESTADO_PAUSA   = "pausa"
+ESTADO_TUTORIAL = "tutorial"
 
 # ── Estados do pescador ──────────────────────────────────────────────────────
 PESC_IDLE     = "idle"
@@ -496,6 +497,7 @@ class Jogo:
         self._carregar_save()
 
         self._reset_msg_timer = 0
+        self._tutorial_pagina  = 0
 
     # ── Posicoes dinamicas (dock vs barco) ────────────────────────────────────
     @property
@@ -550,6 +552,10 @@ class Jogo:
                 self._pausa_eventos()
                 self._pausa_draw()
 
+            elif self.estado == ESTADO_TUTORIAL:
+                self._tutorial_eventos()
+                self._tutorial_draw()
+
             elif self.estado == ESTADO_LOJA:
                 self._loja_eventos()
                 self._loja_draw()
@@ -575,6 +581,9 @@ class Jogo:
                     self.estado = ESTADO_JOGANDO
                 if evento.key == pygame.K_s:
                     self.estado = ESTADO_LOJA
+                if evento.key == pygame.K_t:
+                    self._tutorial_pagina = 0
+                    self.estado = ESTADO_TUTORIAL
                 if evento.key == pygame.K_r:
                     self._resetar_progresso()
                     self._reset_msg_timer = 90
@@ -589,13 +598,15 @@ class Jogo:
         titulo = self.fonte_titulo.render(TITULO, True, (255, 215, 0))
         instrucao = self.fonte_normal.render("ENTER  - Jogar", True, BRANCO)
         instrucao2 = self.fonte_normal.render("S      - Loja de upgrades", True, BRANCO)
-        instrucao3 = self.fonte_normal.render("R      - Resetar progresso", True, (255, 180, 180))
-        instrucao4 = self.fonte_normal.render("ESC    - Sair", True, BRANCO)
+        instrucao3 = self.fonte_normal.render("T      - Tutorial", True, BRANCO)
+        instrucao4 = self.fonte_normal.render("R      - Resetar progresso", True, (255, 180, 180))
+        instrucao5 = self.fonte_normal.render("ESC    - Sair", True, BRANCO)
         self.tela.blit(titulo,     titulo.get_rect(center=(LARGURA//2, ALTURA//3)))
         self.tela.blit(instrucao,  instrucao.get_rect(center=(LARGURA//2, ALTURA//2)))
         self.tela.blit(instrucao2, instrucao2.get_rect(center=(LARGURA//2, ALTURA//2 + 40)))
         self.tela.blit(instrucao3, instrucao3.get_rect(center=(LARGURA//2, ALTURA//2 + 80)))
         self.tela.blit(instrucao4, instrucao4.get_rect(center=(LARGURA//2, ALTURA//2 + 120)))
+        self.tela.blit(instrucao5, instrucao5.get_rect(center=(LARGURA//2, ALTURA//2 + 160)))
 
         if self._reset_msg_timer > 0:
             alpha = min(255, self._reset_msg_timer * 2)
@@ -765,6 +776,111 @@ class Jogo:
         txt = self._fonte_hud.render(
             f"{dica}  |  Nv. {nivel_dif}  |  S = Loja  |  P = Pausa  |  ESC = Menu", True, cor_dica)
         self.tela.blit(txt, txt.get_rect(center=(LARGURA // 2, ALTURA - 14)))
+
+    # ── TUTORIAL ─────────────────────────────────────────────────────────────
+    def _tutorial_eventos(self):
+        for evento in pygame.event.get():
+            if evento.type == pygame.QUIT:
+                self.rodando = False
+            if evento.type == pygame.KEYDOWN:
+                if evento.key in (pygame.K_ESCAPE, pygame.K_t):
+                    self.estado = ESTADO_MENU
+                elif evento.key == pygame.K_RIGHT:
+                    self._tutorial_pagina = min(1, self._tutorial_pagina + 1)
+                elif evento.key == pygame.K_LEFT:
+                    self._tutorial_pagina = max(0, self._tutorial_pagina - 1)
+
+    def _tutorial_draw(self):
+        self.cenario.draw(self.tela, LINHA_AGUA_PADRAO)
+        overlay = pygame.Surface((LARGURA, ALTURA), pygame.SRCALPHA)
+        overlay.fill((0, 0, 0, 160))
+        self.tela.blit(overlay, (0, 0))
+
+        titulo = self.fonte_titulo.render("Como Jogar", True, (255, 215, 0))
+        self.tela.blit(titulo, titulo.get_rect(center=(LARGURA // 2, 50)))
+
+        if self._tutorial_pagina == 0:
+            self._tutorial_pagina_controles()
+        else:
+            self._tutorial_pagina_objetivo()
+
+        # Indicador de pagina
+        pg = self.fonte_pequena.render(
+            f"<  {self._tutorial_pagina + 1}/2  >", True, (180, 180, 180))
+        self.tela.blit(pg, pg.get_rect(center=(LARGURA // 2, ALTURA - 50)))
+
+        # Rodape
+        rodape = self.fonte_pequena.render(
+            "← → = navegar  |  ESC ou T = voltar", True, (160, 160, 160))
+        self.tela.blit(rodape, rodape.get_rect(center=(LARGURA // 2, ALTURA - 18)))
+
+    def _tutorial_pagina_controles(self):
+        f = self.fonte_normal
+        p = self.fonte_pequena
+        y = 100
+        gap = 28
+
+        sec = f.render("Controles", True, (100, 200, 255))
+        self.tela.blit(sec, (80, y)); y += gap + 4
+
+        for tecla, acao in [
+            ("ESPACO", "Lancar o anzol / Puxar quando peixe morder"),
+            ("S",      "Abrir a loja de upgrades"),
+            ("P",      "Pausar o jogo"),
+            ("ESC",    "Salvar e voltar ao menu"),
+        ]:
+            txt = p.render(f"  {tecla:<12} {acao}", True, BRANCO)
+            self.tela.blit(txt, (80, y)); y += gap
+
+        y += 10
+        sec2 = f.render("Como pescar", True, (100, 200, 255))
+        self.tela.blit(sec2, (80, y)); y += gap + 4
+
+        passos = [
+            "1. Pressione ESPACO para lancar o anzol na agua.",
+            "2. Aguarde um peixe se aproximar do anzol.",
+            "3. Quando aparecer \"!\" vermelho, o peixe mordeu!",
+            "4. Pressione ESPACO novamente para fisgar e puxar.",
+            "5. Peixe capturado = moedas no bolso!",
+        ]
+        for txt in passos:
+            linha = p.render(txt, True, BRANCO)
+            self.tela.blit(linha, (80, y)); y += gap
+
+    def _tutorial_pagina_objetivo(self):
+        f = self.fonte_normal
+        p = self.fonte_pequena
+        y = 100
+        gap = 28
+
+        sec = f.render("Upgrades (Loja)", True, (100, 200, 255))
+        self.tela.blit(sec, (80, y)); y += gap + 4
+
+        upgs = [
+            ("Vara Melhor",     "Anzol desce mais fundo, alcanca peixes raros"),
+            ("Isca Premium",    "Peixes sao atraidos de mais longe"),
+            ("Carretilha Rapida","Linha desce e sobe mais rapido"),
+            ("Anzol Grande",    "Maior area de captura"),
+            ("Barco",           "Leva voce ao mar aberto com peixes exclusivos!"),
+        ]
+        for nome, desc in upgs:
+            linha = p.render(f"  {nome:<20} {desc}", True, BRANCO)
+            self.tela.blit(linha, (80, y)); y += gap
+
+        y += 10
+        sec2 = f.render("Objetivo", True, (100, 200, 255))
+        self.tela.blit(sec2, (80, y)); y += gap + 4
+
+        obj = [
+            "Junte 1000 moedas E compre todos os 5 upgrades",
+            "no nivel maximo para zerar o jogo!",
+            "",
+            "Dica: a cada upgrade comprado, o jogo fica",
+            "mais dificil (peixes mais rapidos e numerosos).",
+        ]
+        for txt in obj:
+            linha = p.render(txt, True, BRANCO)
+            self.tela.blit(linha, (80, y)); y += gap
 
     # ── PAUSA ────────────────────────────────────────────────────────────────
     def _pausa_eventos(self):
