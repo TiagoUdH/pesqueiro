@@ -64,6 +64,10 @@ PEIXE_FUGINDO  = "fugindo"   # escapou, afasta do anzol
 VARA_PONTA_X = DOCK_X + 148   # proximo ao topo direito do sprite do pescador
 VARA_PONTA_Y = DOCK_Y - 80
 
+LINHA_AGUA_PADRAO = LINHA_AGUA
+BOAT_X = 250
+BOAT_AGUA_OFFSET = 40
+
 
 def load_image(subdir, name, scale=None):
     """Carrega imagem e converte para o formato da tela."""
@@ -82,23 +86,30 @@ def load_image(subdir, name, scale=None):
 
 # ════════════════════════════════════════════════════════════════════════════
 class Cenario:
-    """Renderiza fundo, agua e dock."""
+    """Renderiza fundo, agua, dock (ou barco em alto-mar)."""
 
     def __init__(self):
-        # Fundo (ceu + terra): escalonado para cobrir a area acima da agua
-        self.fundo = load_image("cenario", "fundo.png", (LARGURA, LINHA_AGUA))
+        self.fundo_dock = load_image("cenario", "fundo.png", (LARGURA, LINHA_AGUA))
+        self.fundo_mar  = load_image("cenario", "fundo_mar_aberto.png", (LARGURA, LINHA_AGUA))
 
-        # Agua (area subaquatica): cobre do LINHA_AGUA ate o final da tela
-        self.agua = load_image("cenario", "agua.png", (LARGURA, ALTURA - LINHA_AGUA))
+        self.dock_img = load_image("cenario", "dock.png", (220, 110))
+        self.dock_img.set_colorkey(BRANCO)
 
-        # Deck de madeira posicionado na beira da agua
-        self.dock = load_image("cenario", "dock.png", (220, 110))
-        self.dock.set_colorkey(BRANCO)  # remove fundo branco
+        self.barco_img = load_image("cenario", "barco.png", (320, 140))
+        self.barco_img.set_colorkey(BRANCO)
 
-    def draw(self, tela):
-        tela.blit(self.fundo, (0, 0))
-        tela.blit(self.agua,  (0, LINHA_AGUA))
-        tela.blit(self.dock,  (DOCK_X, DOCK_Y))
+    def draw(self, tela, agua_y, barco_comprado=False, barco_x=0, barco_y=0):
+        agua_h = ALTURA - agua_y
+        agua_img = load_image("cenario", "agua.png", (LARGURA, agua_h))
+
+        if barco_comprado:
+            tela.blit(self.fundo_mar, (0, 0))
+            tela.blit(agua_img, (0, agua_y))
+            tela.blit(self.barco_img, (barco_x, barco_y))
+        else:
+            tela.blit(self.fundo_dock, (0, 0))
+            tela.blit(agua_img, (0, agua_y))
+            tela.blit(self.dock_img, (DOCK_X, DOCK_Y))
 
 
 # ════════════════════════════════════════════════════════════════════════════
@@ -131,6 +142,9 @@ class Pescador(pygame.sprite.Sprite):
             self.estado = novo_estado
             self.image  = self.frames[novo_estado]
 
+    def reposicionar(self, x, y):
+        self.rect.midbottom = (x, y)
+
     def draw(self, tela):
         tela.blit(self.image, self.rect)
 
@@ -140,9 +154,9 @@ class Anzol(pygame.sprite.Sprite):
     """Anzol que desce e sobe na agua."""
 
     ESCALA    = (38, 55)
-    PROF_MAX  = 120   # profundidade maxima padrao (pixels abaixo de LINHA_AGUA)
+    PROF_MAX  = 120   # profundidade maxima padrao (pixels abaixo da agua)
 
-    def __init__(self, vel=3):
+    def __init__(self, vel=3, agua_y=LINHA_AGUA_PADRAO, vara_x=VARA_PONTA_X, vara_y=VARA_PONTA_Y):
         super().__init__()
         img = load_image("peixes", "anzol.png", self.ESCALA)
         img.set_colorkey(BRANCO)
@@ -154,13 +168,16 @@ class Anzol(pygame.sprite.Sprite):
         self.estado   = ANZOL_IDLE
         self.visivel  = False
 
-        self.rect.center = (VARA_PONTA_X, VARA_PONTA_Y)
+        self.agua_y = agua_y
+        self.vara_x = vara_x
+        self.vara_y = vara_y
+        self.rect.center = (self.vara_x, self.vara_y)
 
     # ── Acoes ────────────────────────────────────────────────────────────────
     def lancar(self):
         """Inicia a descida. So funciona se o anzol estiver idle."""
         if self.estado == ANZOL_IDLE:
-            self.rect.center = (VARA_PONTA_X, VARA_PONTA_Y)
+            self.rect.center = (self.vara_x, self.vara_y)
             self.estado  = ANZOL_DESCENDO
             self.visivel = True
 
@@ -173,14 +190,14 @@ class Anzol(pygame.sprite.Sprite):
     def update(self, dt):
         if self.estado == ANZOL_DESCENDO:
             self.rect.y += self.vel
-            if self.rect.centery >= LINHA_AGUA + self.prof_max:
+            if self.rect.centery >= self.agua_y + self.prof_max:
                 self.estado = ANZOL_NA_AGUA
 
         elif self.estado == ANZOL_SUBINDO:
             self.rect.y -= self.vel
             # Ao sair da agua, some imediatamente (evita sobrepor a vara)
-            if self.rect.centery <= LINHA_AGUA:
-                self.rect.center = (VARA_PONTA_X, VARA_PONTA_Y)
+            if self.rect.centery <= self.agua_y:
+                self.rect.center = (self.vara_x, self.vara_y)
                 self.estado  = ANZOL_IDLE
                 self.visivel = False
 
@@ -213,7 +230,7 @@ class Peixe(pygame.sprite.Sprite):
     RAIO_MORDIDA  = 22   # distancia para considerar mordida
     TEMPO_FUGA    = 120  # frames que o peixe fica fugindo antes de sumir
 
-    def __init__(self, dados):
+    def __init__(self, dados, agua_y=LINHA_AGUA_PADRAO):
         super().__init__()
         self.nome      = dados["nome"]
         self.valor     = dados["valor"]
@@ -238,7 +255,7 @@ class Peixe(pygame.sprite.Sprite):
         self.rect  = self.image.get_rect()
 
         # Posicao inicial: fora da tela pelo lado oposto a direcao
-        y = LINHA_AGUA + random.randint(self.prof_min, self.prof_max)
+        y = agua_y + random.randint(self.prof_min, self.prof_max)
         y = min(y, ALTURA - 30)
         if self.dir > 0:   # vem da esquerda
             self.rect.midright = (0, y)
@@ -333,14 +350,18 @@ def carregar_tipos_peixe():
             "profundidade_min": config.getint(sec, "profundidade_min"),
             "profundidade_max": config.getint(sec, "profundidade_max"),
             "imagem":          config.get(sec, "imagem"),
+            "barco_exclusivo": config.getboolean(sec, "barco_exclusivo", fallback=False),
         })
     return tipos
 
 
-def escolher_tipo_peixe(tipos):
+def escolher_tipo_peixe(tipos, barco_comprado=False):
     """Escolhe um tipo aleatorio ponderado pela raridade."""
-    pesos = [t["raridade"] for t in tipos]
-    return random.choices(tipos, weights=pesos, k=1)[0]
+    disponiveis = [t for t in tipos if not t.get("barco_exclusivo") or barco_comprado]
+    if not disponiveis:
+        return random.choice(tipos)
+    pesos = [t["raridade"] for t in disponiveis]
+    return random.choices(disponiveis, weights=pesos, k=1)[0]
 
 
 def carregar_upgrades():
@@ -467,11 +488,47 @@ class Jogo:
         self.upgrades       = carregar_upgrades()
         self.upgrades_nivel = {u["id"]: 0 for u in self.upgrades}
         self._loja_selecao  = 0
+        self.barco_comprado = False
 
         # Carrega save (ja aplica efeitos dos upgrades salvos)
         self._carregar_save()
 
         self._reset_msg_timer = 0
+
+    # ── Posicoes dinamicas (dock vs barco) ────────────────────────────────────
+    @property
+    def _agua_y(self):
+        return LINHA_AGUA_PADRAO - BOAT_AGUA_OFFSET if self.barco_comprado else LINHA_AGUA_PADRAO
+
+    @property
+    def _vara_ponta(self):
+        if self.barco_comprado:
+            return (BOAT_X + 165, self._agua_y - 170)
+        return (VARA_PONTA_X, VARA_PONTA_Y)
+
+    @property
+    def _excl_pos(self):
+        if self.barco_comprado:
+            return (BOAT_X + 120, self._agua_y - 210)
+        return (DOCK_X + 98, DOCK_Y - 118)
+
+    def _atualizar_layout(self):
+        """Recalcula posicoes do pescador e anzol conforme o cenario atual."""
+        if self.barco_comprado:
+            px = BOAT_X + 120
+            py = self._agua_y - 25
+            vx = BOAT_X + 165
+            vy = self._agua_y - 170
+        else:
+            px = DOCK_X + 110
+            py = DOCK_Y + 68
+            vx = VARA_PONTA_X
+            vy = VARA_PONTA_Y
+        self.pescador.reposicionar(px, py)
+        self.anzol.vara_x = vx
+        self.anzol.vara_y = vy
+        self.anzol.agua_y = self._agua_y
+        self.anzol.rect.center = (vx, vy)
 
     # ── Loop principal ───────────────────────────────────────────────────────
     def run(self):
@@ -523,7 +580,7 @@ class Jogo:
                     self.rodando = False
 
     def _menu_draw(self):
-        self.cenario.draw(self.tela)
+        self.cenario.draw(self.tela, LINHA_AGUA_PADRAO)
         overlay = pygame.Surface((LARGURA, ALTURA), pygame.SRCALPHA)
         overlay.fill((0, 0, 0, 100))
         self.tela.blit(overlay, (0, 0))
@@ -590,10 +647,10 @@ class Jogo:
                 self._pull_vazio = False
                 self._cooldown_timer = 120
                 self.grupo_textos.add(TextoFlutuante("Nada...",
-                    (VARA_PONTA_X + 20, LINHA_AGUA - 14), (180, 200, 255)))
+                    (self._vara_ponta[0] + 20, self._agua_y - 14), (180, 200, 255)))
                 for _ in range(12):
                     self.grupo_particulas.add(
-                        ParticulaSplash(VARA_PONTA_X + 20, LINHA_AGUA))
+                        ParticulaSplash(self._vara_ponta[0] + 20, self._agua_y))
         elif self.anzol.estado == ANZOL_DESCENDO:
             self.pescador.set_estado(PESC_LANCANDO)
 
@@ -602,8 +659,8 @@ class Jogo:
         if self._spawn_timer >= self._spawn_intervalo:
             self._spawn_timer = 0
             if len(self.grupo_peixes) < 5:  # maximo de 5 peixes ao mesmo tempo
-                tipo = escolher_tipo_peixe(self.tipos_peixe)
-                self.grupo_peixes.add(Peixe(tipo))
+                tipo = escolher_tipo_peixe(self.tipos_peixe, self.barco_comprado)
+                self.grupo_peixes.add(Peixe(tipo, self._agua_y))
 
         # Atualiza todos os peixes — apenas um peixe persegue o anzol por vez
         isca_ocupada = any(p.estado in (PEIXE_ATRAIDO, PEIXE_MORDENDO) for p in self.grupo_peixes)
@@ -636,25 +693,23 @@ class Jogo:
         self._salvar()
 
     def _jogo_draw(self):
-        # Cenario: fundo + agua + dock
-        self.cenario.draw(self.tela)
+        agua_y = self._agua_y
+        barco_x = BOAT_X if self.barco_comprado else 0
+        barco_y = agua_y - 65 - 15 if self.barco_comprado else 0
+        self.cenario.draw(self.tela, agua_y, self.barco_comprado, barco_x, barco_y)
 
-        # Linha de pesca (desenhada antes do anzol para ficar atras)
         if self.anzol.visivel:
-            self.linha.draw(self.tela, (VARA_PONTA_X, VARA_PONTA_Y), self.anzol.ponto_topo)
+            self.linha.draw(self.tela, self._vara_ponta, self.anzol.ponto_topo)
 
-        # Pescador e anzol
         self.pescador.draw(self.tela)
         self.grupo_peixes.draw(self.tela)
         self.grupo_particulas.draw(self.tela)
         self.anzol.draw(self.tela)
 
-        # Textos flutuantes
         self.grupo_textos.draw(self.tela)
 
-        # Exclamacao quando peixe morde
         if any(p.esta_mordendo for p in self.grupo_peixes):
-            self.tela.blit(self._hud_excl, (DOCK_X + 98, DOCK_Y - 118))
+            self.tela.blit(self._hud_excl, self._excl_pos)
 
         # HUD — fundo semi-transparente
         self.tela.blit(self._hud_bg, (6, 6))
@@ -773,7 +828,7 @@ class Jogo:
         efeito = upg["efeito"]
         valor  = upg["valor_base"]
         if efeito == "profundidade":
-            limite = ALTURA - LINHA_AGUA - 20   # margem de 20px antes do fundo
+            limite = ALTURA - self._agua_y - 20
             self.anzol.prof_max = min(self.anzol.prof_max + valor, limite)
         elif efeito == "velocidade_linha":
             self.anzol.vel += valor
@@ -781,7 +836,10 @@ class Jogo:
             Peixe.RAIO_ATRACAO = min(Peixe.RAIO_ATRACAO + valor, 180)
         elif efeito == "tamanho_anzol":
             Peixe.RAIO_MORDIDA = min(Peixe.RAIO_MORDIDA + 8, 50)
-        # "cenario" sera tratado no Passo visual de barco
+        elif efeito == "cenario":
+            if not self.barco_comprado:
+                self.barco_comprado = True
+                self._atualizar_layout()
 
     # ── Save / Load ──────────────────────────────────────────────────────────
     def _resetar_progresso(self):
@@ -789,6 +847,7 @@ class Jogo:
         self.moedas            = 0
         self.peixes_capturados = 0
         self.upgrades_nivel    = {uid: 0 for uid in self.upgrades_nivel}
+        self.barco_comprado    = False
         if os.path.exists(SAVE_FILE):
             os.remove(SAVE_FILE)
         self._reaplicar_upgrades()
@@ -820,15 +879,15 @@ class Jogo:
 
     def _reaplicar_upgrades(self):
         """Reseta variaveis de efeito e reaplica todos os niveis salvos."""
-        # Reset para valores base (evita acumulacao dupla)
         Peixe.RAIO_ATRACAO = 90
         Peixe.RAIO_MORDIDA = 22
         self.anzol.prof_max = Anzol.PROF_MAX
         self.anzol.vel      = config.getint("jogador", "velocidade_linha", fallback=3)
-        # Reaplicar nivel a nivel
+        self.barco_comprado = False
         for upg in self.upgrades:
             for n in range(1, self.upgrades_nivel[upg["id"]] + 1):
                 self._aplicar_efeito(upg, n)
+        self._atualizar_layout()
 
     def _loja_draw(self):
         self.tela.fill((50, 30, 10))
@@ -915,7 +974,7 @@ class Jogo:
                     self.estado = ESTADO_MENU
 
     def _fim_draw(self):
-        self.cenario.draw(self.tela)
+        self.cenario.draw(self.tela, LINHA_AGUA_PADRAO)
         overlay = pygame.Surface((LARGURA, ALTURA), pygame.SRCALPHA)
         overlay.fill((0, 0, 0, 140))
         self.tela.blit(overlay, (0, 0))
