@@ -437,6 +437,64 @@ class ParticulaSplash(pygame.sprite.Sprite):
 
 
 # ════════════════════════════════════════════════════════════════════════════
+ACHIEVEMENTS = [
+    {"id": "primeira_captura", "nome": "Primeira Captura", "desc": "Pegue seu primeiro peixe"},
+    {"id": "10_peixes", "nome": "Pescador Novato", "desc": "Capture 10 peixes"},
+    {"id": "50_peixes", "nome": "Pescador Experiente", "desc": "Capture 50 peixes"},
+    {"id": "100_peixes", "nome": "Mestre Pescador", "desc": "Capture 100 peixes"},
+    {"id": "500_moedas", "nome": "Rica\u00e7o", "desc": "Acumule 500 moedas"},
+    {"id": "1000_moedas", "nome": "Milion\u00e1rio", "desc": "Acumule 1000 moedas"},
+    {"id": "todos_upgrades", "nome": "Colecionador", "desc": "Complete todos os upgrades"},
+    {"id": "comprar_barco", "nome": "Alto Mar", "desc": "Compre o barco"},
+    {"id": "dourado", "nome": "Sortudo", "desc": "Capture um Dourado"},
+    {"id": "pirarucu", "nome": "Ca\u00e7ador de Lendas", "desc": "Capture um Pirarucu"},
+    {"id": "arowana", "nome": "\u00c1guas Profundas", "desc": "Capture uma Arowana"},
+    {"id": "zerou", "nome": "Zerou!", "desc": "Complete o jogo"},
+    {"id": "primeiro_nada", "nome": "Pux\u00e3o Vazio", "desc": "Puxe o anzol sem peixe"},
+]
+
+
+class AchievementPopup(pygame.sprite.Sprite):
+    """Notifica\u00e7\u00e3o de achievement que aparece no topo da tela."""
+
+    DURACAO = 180  # frames (~3s)
+
+    def __init__(self, nome, desc):
+        super().__init__()
+        fonte_tit = pygame.font.SysFont("Arial", 20, bold=True)
+        fonte_desc = pygame.font.SysFont("Arial", 16)
+        titulo = fonte_tit.render(f"Achievement: {nome}", True, (255, 215, 0))
+        desc_surf = fonte_desc.render(desc, True, (220, 220, 220))
+
+        self.image = pygame.Surface((360, 64), pygame.SRCALPHA)
+        self.image.fill((0, 0, 0, 190))
+        pygame.draw.rect(self.image, (255, 215, 0), self.image.get_rect(), 2, border_radius=6)
+        self.image.blit(titulo, (14, 6))
+        self.image.blit(desc_surf, (14, 32))
+
+        self.rect = self.image.get_rect()
+        self.rect.midtop = (LARGURA // 2, -70)
+        self._y_alvo = 14
+        self._timer = 0
+        self._entrando = True
+
+    def update(self):
+        self._timer += 1
+        if self._entrando:
+            self.rect.y += (self._y_alvo - self.rect.y) * 0.12
+            if abs(self.rect.y - self._y_alvo) < 1:
+                self.rect.y = self._y_alvo
+                self._entrando = False
+        if self._timer >= self.DURACAO:
+            self.rect.y -= 2
+            if self.rect.bottom < 0:
+                self.kill()
+
+
+# ════════════════════════════════════════════════════════════════════════════
+ESTADO_CONQUISTAS = "conquistas"
+
+
 class Jogo:
     def __init__(self):
         pygame.init()
@@ -492,6 +550,9 @@ class Jogo:
         self.upgrades_nivel = {u["id"]: 0 for u in self.upgrades}
         self._loja_selecao  = 0
         self.barco_comprado = False
+        self.conquistas = [dict(a) for a in ACHIEVEMENTS]
+        self.conquistas_desbloqueadas = set()
+        self._popup_conquista = None
 
         # Carrega save (ja aplica efeitos dos upgrades salvos)
         self._carregar_save()
@@ -564,6 +625,10 @@ class Jogo:
                 self._fim_eventos()
                 self._fim_draw()
 
+            elif self.estado == ESTADO_CONQUISTAS:
+                self._conquistas_eventos()
+                self._conquistas_draw()
+
             pygame.display.flip()
 
         pygame.quit()
@@ -587,6 +652,8 @@ class Jogo:
                 if evento.key == pygame.K_r:
                     self._resetar_progresso()
                     self._reset_msg_timer = 90
+                if evento.key == pygame.K_a:
+                    self.estado = ESTADO_CONQUISTAS
                 if evento.key == pygame.K_ESCAPE:
                     self.rodando = False
 
@@ -599,14 +666,16 @@ class Jogo:
         instrucao = self.fonte_normal.render("ENTER  - Jogar", True, BRANCO)
         instrucao2 = self.fonte_normal.render("S      - Loja de upgrades", True, BRANCO)
         instrucao3 = self.fonte_normal.render("T      - Tutorial", True, BRANCO)
-        instrucao4 = self.fonte_normal.render("R      - Resetar progresso", True, (255, 180, 180))
-        instrucao5 = self.fonte_normal.render("ESC    - Sair", True, BRANCO)
+        instrucao4 = self.fonte_normal.render("A      - Conquistas", True, (100, 200, 255))
+        instrucao5 = self.fonte_normal.render("R      - Resetar progresso", True, (255, 180, 180))
+        instrucao6 = self.fonte_normal.render("ESC    - Sair", True, BRANCO)
         self.tela.blit(titulo,     titulo.get_rect(center=(LARGURA//2, ALTURA//3)))
         self.tela.blit(instrucao,  instrucao.get_rect(center=(LARGURA//2, ALTURA//2)))
         self.tela.blit(instrucao2, instrucao2.get_rect(center=(LARGURA//2, ALTURA//2 + 40)))
         self.tela.blit(instrucao3, instrucao3.get_rect(center=(LARGURA//2, ALTURA//2 + 80)))
         self.tela.blit(instrucao4, instrucao4.get_rect(center=(LARGURA//2, ALTURA//2 + 120)))
         self.tela.blit(instrucao5, instrucao5.get_rect(center=(LARGURA//2, ALTURA//2 + 160)))
+        self.tela.blit(instrucao6, instrucao6.get_rect(center=(LARGURA//2, ALTURA//2 + 200)))
 
         if self._reset_msg_timer > 0:
             alpha = min(255, self._reset_msg_timer * 2)
@@ -664,14 +733,17 @@ class Jogo:
                 for _ in range(12):
                     self.grupo_particulas.add(
                         ParticulaSplash(self._vara_ponta[0] + 20, self._agua_y))
+                self._verificar_conquista("nada")
         elif self.anzol.estado == ANZOL_DESCENDO:
             self.pescador.set_estado(PESC_LANCANDO)
 
         # Spawn de peixes
         self._spawn_timer += 1
-        if self._spawn_timer >= self._spawn_intervalo:
+        spawn_intervalo = max(45, 120 - self.peixes_capturados * 2)
+        max_peixes = 5 + min(2, self.peixes_capturados // 15)
+        if self._spawn_timer >= spawn_intervalo:
             self._spawn_timer = 0
-            if len(self.grupo_peixes) < self._max_peixes:
+            if len(self.grupo_peixes) < max_peixes:
                 tipo = escolher_tipo_peixe(self.tipos_peixe, self.barco_comprado)
                 self.grupo_peixes.add(Peixe(tipo, self._agua_y))
 
@@ -690,9 +762,14 @@ class Jogo:
         # Atualiza textos flutuantes
         self.grupo_textos.update()
         self.grupo_particulas.update()
+        if self._popup_conquista:
+            self._popup_conquista.update()
+            if not self._popup_conquista.alive():
+                self._popup_conquista = None
 
         # Verifica meta: moedas + todos os upgrades no maximo
         if self.moedas >= self.meta_moedas and self._todos_upgrades_maximos():
+            self._desbloquear_conquista("zerou")
             self._salvar()
             self.estado = ESTADO_FIM
 
@@ -702,6 +779,8 @@ class Jogo:
         self.peixes_capturados += 1
         pos = (peixe.rect.centerx, peixe.rect.top - 10)
         self.grupo_textos.add(TextoFlutuante(f"+{peixe.valor} moedas", pos))
+        self._verificar_conquista("capturar", nome_peixe=peixe.nome)
+        self._verificar_conquista("moedas")
         peixe.kill()
         self._salvar()
 
@@ -776,6 +855,9 @@ class Jogo:
         txt = self._fonte_hud.render(
             f"{dica}  |  Nv. {nivel_dif}  |  S = Loja  |  P = Pausa  |  ESC = Menu", True, cor_dica)
         self.tela.blit(txt, txt.get_rect(center=(LARGURA // 2, ALTURA - 14)))
+
+        if self._popup_conquista and self._popup_conquista.alive():
+            self.tela.blit(self._popup_conquista.image, self._popup_conquista.rect)
 
     # ── TUTORIAL ─────────────────────────────────────────────────────────────
     def _tutorial_eventos(self):
@@ -932,8 +1014,8 @@ class Jogo:
         self.moedas -= custo
         self.upgrades_nivel[uid] = nivel + 1
         self._aplicar_efeito(upg, nivel + 1)
-        self._atualizar_dificuldade()
-        # Texto flutuante de compra
+        if self._todos_upgrades_maximos():
+            self._verificar_conquista("todos_upgrades")
         pos = (LARGURA // 2, ALTURA // 2)
         self.grupo_textos.add(TextoFlutuante(f"{upg['nome']} Nv.{nivel+1}!", pos, (100, 255, 100)))
         self._salvar()
@@ -960,6 +1042,7 @@ class Jogo:
         elif efeito == "cenario":
             if not self.barco_comprado:
                 self.barco_comprado = True
+                self._verificar_conquista("comprar_barco")
         self._atualizar_layout()
         self._atualizar_dificuldade()
 
@@ -969,6 +1052,45 @@ class Jogo:
         self._max_peixes      = min(9, 5 + nivel_total // 3)
         Peixe.VEL_MULT        = 1.0 + nivel_total * 0.05
 
+    # ── Achievements ─────────────────────────────────────────────────────────
+    def _desbloquear_conquista(self, ach_id):
+        if ach_id in self.conquistas_desbloqueadas:
+            return
+        self.conquistas_desbloqueadas.add(ach_id)
+        ach = next((a for a in self.conquistas if a["id"] == ach_id), None)
+        if not ach:
+            return
+        self._popup_conquista = AchievementPopup(ach["nome"], ach["desc"])
+        self._salvar()
+
+    def _verificar_conquista(self, gatilho, **kwargs):
+        if gatilho == "capturar":
+            self._desbloquear_conquista("primeira_captura")
+            if self.peixes_capturados >= 10:
+                self._desbloquear_conquista("10_peixes")
+            if self.peixes_capturados >= 50:
+                self._desbloquear_conquista("50_peixes")
+            if self.peixes_capturados >= 100:
+                self._desbloquear_conquista("100_peixes")
+            nome = kwargs.get("nome_peixe", "")
+            if nome == "Dourado":
+                self._desbloquear_conquista("dourado")
+            if nome == "Pirarucu":
+                self._desbloquear_conquista("pirarucu")
+            if nome == "Arowana":
+                self._desbloquear_conquista("arowana")
+        elif gatilho == "moedas":
+            if self.moedas >= 500:
+                self._desbloquear_conquista("500_moedas")
+            if self.moedas >= 1000:
+                self._desbloquear_conquista("1000_moedas")
+        elif gatilho == "todos_upgrades":
+            self._desbloquear_conquista("todos_upgrades")
+        elif gatilho == "zerou":
+            self._desbloquear_conquista("zerou")
+        elif gatilho == "nada":
+            self._desbloquear_conquista("primeiro_nada")
+
     # ── Save / Load ──────────────────────────────────────────────────────────
     def _resetar_progresso(self):
         """Zera moedas, peixes, upgrades e apaga o save."""
@@ -976,6 +1098,7 @@ class Jogo:
         self.peixes_capturados = 0
         self.upgrades_nivel    = {uid: 0 for uid in self.upgrades_nivel}
         self.barco_comprado    = False
+        self.conquistas_desbloqueadas = set()
         if os.path.exists(SAVE_FILE):
             os.remove(SAVE_FILE)
         self._reaplicar_upgrades()
@@ -988,6 +1111,7 @@ class Jogo:
             "peixes_capturados": str(self.peixes_capturados),
         }
         save["upgrades"] = {uid: str(n) for uid, n in self.upgrades_nivel.items()}
+        save["conquistas"] = {aid: "1" for aid in self.conquistas_desbloqueadas}
         with open(SAVE_FILE, "w", encoding="utf-8") as f:
             save.write(f)
 
@@ -1003,6 +1127,10 @@ class Jogo:
         if "upgrades" in save:
             for uid in self.upgrades_nivel:
                 self.upgrades_nivel[uid] = save.getint("upgrades", uid, fallback=0)
+        if "conquistas" in save:
+            for aid in save["conquistas"]:
+                if save.getboolean("conquistas", aid, fallback=False):
+                    self.conquistas_desbloqueadas.add(aid)
         self._reaplicar_upgrades()
 
     def _reaplicar_upgrades(self):
@@ -1114,6 +1242,54 @@ class Jogo:
         self.tela.blit(msg, msg.get_rect(center=(LARGURA//2, ALTURA//2 - 50)))
         self.tela.blit(linha1, linha1.get_rect(center=(LARGURA//2, ALTURA//2)))
         self.tela.blit(sub, sub.get_rect(center=(LARGURA//2, ALTURA//2 + 40)))
+
+    # ── CONQUISTAS ────────────────────────────────────────────────────────────
+    def _conquistas_eventos(self):
+        for evento in pygame.event.get():
+            if evento.type == pygame.QUIT:
+                self.rodando = False
+            if evento.type == pygame.KEYDOWN:
+                if evento.key in (pygame.K_ESCAPE, pygame.K_a):
+                    self.estado = ESTADO_MENU
+
+    def _conquistas_draw(self):
+        self.tela.fill((20, 25, 50))
+        titulo = self.fonte_titulo.render("Conquistas", True, (255, 215, 0))
+        self.tela.blit(titulo, titulo.get_rect(center=(LARGURA // 2, 36)))
+
+        total = len(self.conquistas)
+        feitas = len(self.conquistas_desbloqueadas)
+        resumo = self.fonte_normal.render(f"{feitas} / {total} desbloqueadas", True, (200, 200, 200))
+        self.tela.blit(resumo, resumo.get_rect(center=(LARGURA // 2, 74)))
+
+        pygame.draw.line(self.tela, (60, 60, 90), (40, 90), (LARGURA - 40, 90), 1)
+
+        y0 = 100
+        linha_h = 36
+        for i, ach in enumerate(self.conquistas):
+            desbloqueada = ach["id"] in self.conquistas_desbloqueadas
+            ry = y0 + i * linha_h
+
+            if desbloqueada:
+                cor_fundo = (40, 60, 35)
+                cor_nome  = (200, 255, 200)
+                status    = "✓"
+                cor_status = (150, 255, 150)
+            else:
+                cor_fundo = (35, 35, 45)
+                cor_nome  = (130, 130, 150)
+                status    = "✗"
+                cor_status = (90, 90, 110)
+
+            rect_item = pygame.Rect(40, ry, LARGURA - 80, linha_h - 2)
+            pygame.draw.rect(self.tela, cor_fundo, rect_item, border_radius=4)
+
+            texto = f"{status}  {ach['nome']}  —  {ach['desc']}"
+            texto_surf = self.fonte_pequena.render(texto, True, cor_nome)
+            self.tela.blit(texto_surf, (rect_item.x + 10, rect_item.y + 8))
+
+        ajuda = self.fonte_pequena.render("A ou ESC  =  Voltar", True, (160, 160, 160))
+        self.tela.blit(ajuda, ajuda.get_rect(center=(LARGURA // 2, ALTURA - 14)))
 
 
 # ── Iniciar ──────────────────────────────────────────────────────────────────
