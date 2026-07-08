@@ -477,8 +477,11 @@ class AchievementPopup(pygame.sprite.Sprite):
         self._y_alvo = 14
         self._timer = 0
         self._entrando = True
+        self._vivo = True
 
     def update(self):
+        if not self._vivo:
+            return
         self._timer += 1
         if self._entrando:
             self.rect.y += (self._y_alvo - self.rect.y) * 0.12
@@ -488,7 +491,10 @@ class AchievementPopup(pygame.sprite.Sprite):
         if self._timer >= self.DURACAO:
             self.rect.y -= 2
             if self.rect.bottom < 0:
-                self.kill()
+                self._vivo = False
+
+    def alive(self):
+        return self._vivo
 
 
 # ════════════════════════════════════════════════════════════════════════════
