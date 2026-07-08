@@ -99,9 +99,11 @@ class Cenario:
         self.barco_img = load_image("cenario", "barco.png", (320, 140))
         self.barco_img.set_colorkey(BRANCO)
 
+        self.agua_src = load_image("cenario", "agua.png")
+
     def draw(self, tela, agua_y, barco_comprado=False, barco_x=0, barco_y=0):
         agua_h = ALTURA - agua_y
-        agua_img = load_image("cenario", "agua.png", (LARGURA, agua_h))
+        agua_img = pygame.transform.scale(self.agua_src, (LARGURA, agua_h))
 
         if barco_comprado:
             tela.blit(self.fundo_mar, (0, 0))
@@ -189,13 +191,14 @@ class Anzol(pygame.sprite.Sprite):
 
     # ── Update ───────────────────────────────────────────────────────────────
     def update(self, dt):
+        dt_scale = dt * FPS / 1000.0
         if self.estado == ANZOL_DESCENDO:
-            self.rect.y += self.vel
+            self.rect.y += self.vel * dt_scale
             if self.rect.centery >= self.agua_y + self.prof_max:
                 self.estado = ANZOL_NA_AGUA
 
         elif self.estado == ANZOL_SUBINDO:
-            self.rect.y -= self.vel
+            self.rect.y -= self.vel * dt_scale
             # Ao sair da agua, some imediatamente (evita sobrepor a vara)
             if self.rect.centery <= self.agua_y:
                 self.rect.center = (self.vara_x, self.vara_y)
@@ -229,7 +232,7 @@ class Peixe(pygame.sprite.Sprite):
 
     RAIO_ATRACAO  = 90   # distancia para começar a ir ao anzol
     RAIO_MORDIDA  = 22   # distancia para considerar mordida
-    TEMPO_FUGA    = 120  # frames que o peixe fica fugindo antes de sumir
+    TEMPO_FUGA    = 2.0   # segundos fugindo antes de sumir
     VEL_MULT      = 1.0  # multiplicador de velocidade conforme dificuldade
 
     def __init__(self, dados, agua_y=LINHA_AGUA_PADRAO):
@@ -265,9 +268,10 @@ class Peixe(pygame.sprite.Sprite):
             self.rect.midleft  = (LARGURA, y)
 
     # ── Update ───────────────────────────────────────────────────────────────
-    def update(self, anzol, isca_ocupada=False):
+    def update(self, anzol, isca_ocupada=False, dt=16.667):
+        dt_scale = dt * FPS / 1000.0
         if self.estado == PEIXE_NADANDO:
-            self.rect.x += self.vel
+            self.rect.x += self.vel * dt_scale
             self._checar_atracoes(anzol, isca_ocupada)
             self._checar_bordas()
 
@@ -277,8 +281,8 @@ class Peixe(pygame.sprite.Sprite):
                 dx = anzol.rect.centerx - self.rect.centerx
                 dy = anzol.rect.centery - self.rect.centery
                 dist = max(1, (dx**2 + dy**2) ** 0.5)
-                self.rect.x += int(self.vel_base * 1.5 * dx / dist)
-                self.rect.y += int(self.vel_base * 0.8 * dy / dist)
+                self.rect.x += int(self.vel_base * 1.5 * dx / dist * dt_scale)
+                self.rect.y += int(self.vel_base * 0.8 * dy / dist * dt_scale)
                 self._atualizar_flip(dx)
                 # Chegou na mordida?
                 if dist <= self.RAIO_MORDIDA:
@@ -302,8 +306,8 @@ class Peixe(pygame.sprite.Sprite):
                 self.capturado = True
 
         elif self.estado == PEIXE_FUGINDO:
-            self.rect.x += self.vel_base * 2 * self.dir
-            self._fuga_timer += 1
+            self.rect.x += self.vel_base * 2 * self.dir * dt_scale
+            self._fuga_timer += dt / 1000.0
             if self._fuga_timer >= self.TEMPO_FUGA or self._saiu_da_tela():
                 self.kill()
 
@@ -344,6 +348,8 @@ def carregar_tipos_peixe():
     num = config.getint("peixes", "num", fallback=0)
     for i in range(num):
         sec = f"peixe{i}"
+        if not config.has_section(sec):
+            continue
         tipos.append({
             "nome":            config.get(sec, "nome"),
             "valor":           config.getint(sec, "valor"),
@@ -359,9 +365,11 @@ def carregar_tipos_peixe():
 
 def escolher_tipo_peixe(tipos, barco_comprado=False):
     """Escolhe um tipo aleatorio ponderado pela raridade."""
+    if not tipos:
+        return None
     disponiveis = [t for t in tipos if not t.get("barco_exclusivo") or barco_comprado]
     if not disponiveis:
-        return random.choice(tipos)
+        return None
     pesos = [t["raridade"] for t in disponiveis]
     return random.choices(disponiveis, weights=pesos, k=1)[0]
 
@@ -372,6 +380,8 @@ def carregar_upgrades():
     num = config.getint("upgrades", "num", fallback=0)
     for i in range(num):
         sec = f"upgrade{i}"
+        if not config.has_section(sec):
+            continue
         upgs.append({
             "id":           config.get(sec, "id"),
             "nome":         config.get(sec, "nome"),
@@ -389,7 +399,7 @@ class TextoFlutuante(pygame.sprite.Sprite):
     """Texto que sobe e desaparece na tela (ex: '+10 moedas')."""
 
     VEL_SUBIDA = 1.2
-    DURACAO    = 80   # frames ate sumir
+    DURACAO    = 1.33   # segundos ate sumir
 
     def __init__(self, texto, pos, cor=(255, 215, 0)):
         super().__init__()
@@ -399,12 +409,15 @@ class TextoFlutuante(pygame.sprite.Sprite):
         self._timer  = 0
         self._y      = float(self.rect.y)
 
-    def update(self):
-        self._timer += 1
-        self._y     -= self.VEL_SUBIDA
+    def update(self, dt=16.667):
+        dt_scale = dt * FPS / 1000.0
+        dt_sec = dt / 1000.0
+        self._timer += dt_sec
+        self._y     -= self.VEL_SUBIDA * dt_scale
         self.rect.y  = int(self._y)
         # Fade out na segunda metade
-        alpha = max(0, 255 - int(255 * self._timer / self.DURACAO))
+        progresso = min(self._timer / self.DURACAO, 1.0)
+        alpha = max(0, 255 - int(255 * progresso))
         self.image.set_alpha(alpha)
         if self._timer >= self.DURACAO:
             self.kill()
@@ -423,13 +436,15 @@ class ParticulaSplash(pygame.sprite.Sprite):
         self.vx = random.uniform(-2.5, 2.5)
         self.vy = random.uniform(-4.0, -1.5)
         self._timer = 0
-        self._duracao = random.randint(25, 45)
+        self._duracao = random.uniform(0.4, 0.75)
 
-    def update(self):
-        self._timer += 1
-        self.rect.x += int(self.vx)
-        self.rect.y += int(self.vy)
-        self.vy += 0.15
+    def update(self, dt=16.667):
+        dt_scale = dt * FPS / 1000.0
+        dt_sec = dt / 1000.0
+        self._timer += dt_sec
+        self.rect.x += int(self.vx * dt_scale)
+        self.rect.y += int(self.vy * dt_scale)
+        self.vy += 0.15 * dt_scale
         alpha = max(0, 255 - int(255 * self._timer / self._duracao))
         self.image.set_alpha(alpha)
         if self._timer >= self._duracao:
@@ -457,7 +472,7 @@ ACHIEVEMENTS = [
 class AchievementPopup(pygame.sprite.Sprite):
     """Notifica\u00e7\u00e3o de achievement que aparece no topo da tela."""
 
-    DURACAO = 180  # frames (~3s)
+    DURACAO = 3.0   # segundos visivel
 
     def __init__(self, nome, desc):
         super().__init__()
@@ -479,17 +494,19 @@ class AchievementPopup(pygame.sprite.Sprite):
         self._entrando = True
         self._vivo = True
 
-    def update(self):
+    def update(self, dt=16.667):
         if not self._vivo:
             return
-        self._timer += 1
+        dt_scale = dt * FPS / 1000.0
+        self._timer += dt / 1000.0
         if self._entrando:
-            self.rect.y += (self._y_alvo - self.rect.y) * 0.12
-            if abs(self.rect.y - self._y_alvo) < 1:
+            self.rect.y += 5 * dt_scale
+            if self.rect.y >= self._y_alvo:
                 self.rect.y = self._y_alvo
                 self._entrando = False
-        if self._timer >= self.DURACAO:
-            self.rect.y -= 2
+                self._timer = 0
+        elif self._timer >= self.DURACAO:
+            self.rect.y -= 3 * dt_scale
             if self.rect.bottom < 0:
                 self._vivo = False
 
@@ -526,7 +543,7 @@ class Jogo:
         self.tipos_peixe     = carregar_tipos_peixe()
         self.grupo_peixes    = pygame.sprite.Group()
         self._spawn_timer    = 0
-        self._spawn_intervalo = 120
+        self._spawn_intervalo = 2.0
         self._max_peixes      = 5
 
         self._cooldown_timer = 0
@@ -725,15 +742,16 @@ class Jogo:
 
     def _jogo_update(self, dt):
         self.anzol.update(dt)
+        dt_sec = dt / 1000.0
 
         if self._cooldown_timer > 0:
-            self._cooldown_timer -= 1
+            self._cooldown_timer -= dt_sec
 
         if self.anzol.estado == ANZOL_IDLE:
             self.pescador.set_estado(PESC_IDLE)
             if self._pull_vazio:
                 self._pull_vazio = False
-                self._cooldown_timer = 120
+                self._cooldown_timer = 2.0
                 self.grupo_textos.add(TextoFlutuante("Nada...",
                     (self._vara_ponta[0] + 20, self._agua_y - 14), (180, 200, 255)))
                 for _ in range(12):
@@ -744,17 +762,18 @@ class Jogo:
             self.pescador.set_estado(PESC_LANCANDO)
 
         # Spawn de peixes
-        self._spawn_timer += 1
+        self._spawn_timer += dt_sec
         if self._spawn_timer >= self._spawn_intervalo:
             self._spawn_timer = 0
             if len(self.grupo_peixes) < self._max_peixes:
                 tipo = escolher_tipo_peixe(self.tipos_peixe, self.barco_comprado)
-                self.grupo_peixes.add(Peixe(tipo, self._agua_y))
+                if tipo:
+                    self.grupo_peixes.add(Peixe(tipo, self._agua_y))
 
         # Atualiza todos os peixes — apenas um peixe persegue o anzol por vez
         isca_ocupada = any(p.estado in (PEIXE_ATRAIDO, PEIXE_MORDENDO) for p in self.grupo_peixes)
         for peixe in self.grupo_peixes:
-            peixe.update(self.anzol, isca_ocupada)
+            peixe.update(self.anzol, isca_ocupada, dt)
             if peixe.estado in (PEIXE_ATRAIDO, PEIXE_MORDENDO):
                 isca_ocupada = True
 
@@ -764,10 +783,10 @@ class Jogo:
                 self._capturar_peixe(peixe)
 
         # Atualiza textos flutuantes
-        self.grupo_textos.update()
-        self.grupo_particulas.update()
+        self.grupo_textos.update(dt)
+        self.grupo_particulas.update(dt)
         if self._popup_conquista:
-            self._popup_conquista.update()
+            self._popup_conquista.update(dt)
             if not self._popup_conquista.alive():
                 self._popup_conquista = None
 
@@ -844,7 +863,7 @@ class Jogo:
 
         # Instrucao de controle (rodape)
         if self._cooldown_timer > 0:
-            dica = f"Aguarde... ({self._cooldown_timer // 10 + 1})"
+            dica = f"Aguarde... ({int(self._cooldown_timer) + 1})"
             cor_dica = (255, 180, 100)
         elif any(p.esta_mordendo for p in self.grupo_peixes):
             dica = "ESPACO = capturar!"
@@ -1000,15 +1019,18 @@ class Jogo:
             if evento.type == pygame.KEYDOWN:
                 if evento.key in (pygame.K_ESCAPE, pygame.K_s):
                     self.estado = ESTADO_JOGANDO
-                elif evento.key == pygame.K_UP:
-                    self._loja_selecao = (self._loja_selecao - 1) % len(self.upgrades)
-                elif evento.key == pygame.K_DOWN:
-                    self._loja_selecao = (self._loja_selecao + 1) % len(self.upgrades)
-                elif evento.key == pygame.K_RETURN:
+                elif evento.key in (pygame.K_UP, pygame.K_DOWN) and self.upgrades:
+                    if evento.key == pygame.K_UP:
+                        self._loja_selecao = (self._loja_selecao - 1) % len(self.upgrades)
+                    else:
+                        self._loja_selecao = (self._loja_selecao + 1) % len(self.upgrades)
+                elif evento.key == pygame.K_RETURN and self.upgrades:
                     self._comprar_upgrade(self.upgrades[self._loja_selecao])
 
     def _comprar_upgrade(self, upg):
         """Tenta comprar o upgrade selecionado."""
+        if not upg:
+            return
         uid    = upg["id"]
         nivel  = self.upgrades_nivel[uid]
         maximo = upg["maximo_nivel"]
@@ -1056,7 +1078,7 @@ class Jogo:
         upg_nivel = sum(self.upgrades_nivel.values())
         cap_nivel = min(10, self.peixes_capturados // 5)
         nivel = upg_nivel + cap_nivel
-        self._spawn_intervalo = max(35, 120 - nivel * 4)
+        self._spawn_intervalo = max(0.6, 2.0 - nivel * 0.067)
         self._max_peixes      = min(9, 5 + nivel // 4)
         Peixe.VEL_MULT        = 1.0 + nivel * 0.04
 
@@ -1161,8 +1183,13 @@ class Jogo:
         self.tela.blit(titulo, titulo.get_rect(center=(LARGURA // 2, 38)))
 
         # Moedas centralizadas
-        moedas_txt = self.fonte_normal.render(f"Moedas disponíveis:  {self.moedas}", True, (255, 215, 0))
+        moedas_txt = self.fonte_normal.render(f"Moedas disponiveis:  {self.moedas}", True, (255, 215, 0))
         self.tela.blit(moedas_txt, moedas_txt.get_rect(center=(LARGURA // 2, 74)))
+
+        if not self.upgrades:
+            msg = self.fonte_normal.render("Nenhum upgrade disponivel", True, (200, 200, 200))
+            self.tela.blit(msg, msg.get_rect(center=(LARGURA // 2, ALTURA // 2)))
+            return
 
         # Separador
         pygame.draw.line(self.tela, (120, 80, 30), (40, 90), (LARGURA - 40, 90), 1)
@@ -1250,6 +1277,11 @@ class Jogo:
         self.tela.blit(msg, msg.get_rect(center=(LARGURA//2, ALTURA//2 - 50)))
         self.tela.blit(linha1, linha1.get_rect(center=(LARGURA//2, ALTURA//2)))
         self.tela.blit(sub, sub.get_rect(center=(LARGURA//2, ALTURA//2 + 40)))
+
+        # Renderiza popup de conquista se houver
+        if self._popup_conquista and self._popup_conquista.alive():
+            self._popup_conquista.update(16.667)
+            self.tela.blit(self._popup_conquista.image, self._popup_conquista.rect)
 
     # ── CONQUISTAS ────────────────────────────────────────────────────────────
     def _conquistas_eventos(self):
