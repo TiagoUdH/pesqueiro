@@ -739,11 +739,9 @@ class Jogo:
 
         # Spawn de peixes
         self._spawn_timer += 1
-        spawn_intervalo = max(45, 120 - self.peixes_capturados * 2)
-        max_peixes = 5 + min(2, self.peixes_capturados // 15)
-        if self._spawn_timer >= spawn_intervalo:
+        if self._spawn_timer >= self._spawn_intervalo:
             self._spawn_timer = 0
-            if len(self.grupo_peixes) < max_peixes:
+            if len(self.grupo_peixes) < self._max_peixes:
                 tipo = escolher_tipo_peixe(self.tipos_peixe, self.barco_comprado)
                 self.grupo_peixes.add(Peixe(tipo, self._agua_y))
 
@@ -781,6 +779,7 @@ class Jogo:
         self.grupo_textos.add(TextoFlutuante(f"+{peixe.valor} moedas", pos))
         self._verificar_conquista("capturar", nome_peixe=peixe.nome)
         self._verificar_conquista("moedas")
+        self._atualizar_dificuldade()
         peixe.kill()
         self._salvar()
 
@@ -957,8 +956,9 @@ class Jogo:
             "Junte 1000 moedas E compre todos os 5 upgrades",
             "no nivel maximo para zerar o jogo!",
             "",
-            "Dica: a cada upgrade comprado, o jogo fica",
-            "mais dificil (peixes mais rapidos e numerosos).",
+            "Dica: conforme voce pesca e compra upgrades,",
+            "o jogo fica mais dificil (peixes mais rapidos",
+            "e numerosos). Veja o Nv. no rodape!",
         ]
         for txt in obj:
             linha = p.render(txt, True, BRANCO)
@@ -1038,7 +1038,7 @@ class Jogo:
         elif efeito == "chance_mordida":
             Peixe.RAIO_ATRACAO = min(Peixe.RAIO_ATRACAO + valor, 180)
         elif efeito == "tamanho_anzol":
-            Peixe.RAIO_MORDIDA = min(Peixe.RAIO_MORDIDA + 8, 50)
+            Peixe.RAIO_MORDIDA = min(Peixe.RAIO_MORDIDA + valor, 50)
         elif efeito == "cenario":
             if not self.barco_comprado:
                 self.barco_comprado = True
@@ -1047,10 +1047,12 @@ class Jogo:
         self._atualizar_dificuldade()
 
     def _atualizar_dificuldade(self):
-        nivel_total = sum(self.upgrades_nivel.values())
-        self._spawn_intervalo = max(40, 120 - nivel_total * 7)
-        self._max_peixes      = min(9, 5 + nivel_total // 3)
-        Peixe.VEL_MULT        = 1.0 + nivel_total * 0.05
+        upg_nivel = sum(self.upgrades_nivel.values())
+        cap_nivel = min(10, self.peixes_capturados // 5)
+        nivel = upg_nivel + cap_nivel
+        self._spawn_intervalo = max(35, 120 - nivel * 4)
+        self._max_peixes      = min(9, 5 + nivel // 4)
+        Peixe.VEL_MULT        = 1.0 + nivel * 0.04
 
     # ── Achievements ─────────────────────────────────────────────────────────
     def _desbloquear_conquista(self, ach_id):
